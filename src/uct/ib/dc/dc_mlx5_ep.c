@@ -1366,31 +1366,6 @@ ucs_status_t uct_dc_mlx5_ep_check_fc(uct_dc_mlx5_iface_t *iface, uct_dc_mlx5_ep_
     return UCS_OK;
 }
 
-void uct_dc_mlx5_ep_handle_failure(uct_dc_mlx5_ep_t *ep, void *arg,
-                                   ucs_status_t ep_status)
-{
-    struct mlx5_cqe64 *cqe     = arg;
-    uct_iface_h tl_iface       = ep->super.super.iface;
-    uint8_t dci_index          = ep->dci;
-    uct_dc_mlx5_iface_t *iface = ucs_derived_of(tl_iface, uct_dc_mlx5_iface_t);
-    uct_rc_txqp_t *txqp        = &iface->tx.dcis[dci_index].txqp;
-    uct_ib_mlx5_txwq_t *txwq   = &iface->tx.dcis[dci_index].txwq;
-    uint16_t pi                = ntohs(cqe->wqe_counter);
-
-    ucs_assert(!uct_dc_mlx5_iface_is_dci_rand(iface));
-
-    uct_dc_mlx5_update_tx_res(iface, txwq, txqp, pi);
-    uct_rc_txqp_purge_outstanding(&iface->super.super, txqp, ep_status, pi, 0);
-
-    ucs_assert(ep->dci != UCT_DC_MLX5_EP_NO_DCI);
-    uct_dc_mlx5_iface_dci_put(iface, dci_index);
-    uct_dc_mlx5_iface_set_ep_failed(iface, ep, cqe, txwq, ep_status);
-
-    if (ep->dci == UCT_DC_MLX5_EP_NO_DCI) {
-        uct_dc_mlx5_iface_reset_dci(iface, dci_index);
-    }
-}
-
 static void
 uct_dc_mlx5_ep_check_send_completion(uct_rc_iface_send_op_t *op, const void *resp)
 {

@@ -94,6 +94,10 @@ ucs_status_t test_uct_peer_failure::err_cb(void *arg, uct_ep_h ep,
 
     self->m_err_count++;
 
+    EXPECT_EQ(ep, self->ep0());
+    uct_ep_pending_purge(self->ep0(), purge_cb, NULL);
+    self->m_sender->destroy_ep(0);
+
     switch (status) {
     case UCS_ERR_ENDPOINT_TIMEOUT:
     case UCS_ERR_CANCELED: /* goes from ib flushed QP */
@@ -298,9 +302,8 @@ UCS_TEST_SKIP_COND_P(test_uct_peer_failure, purge_failed_peer,
 
     /* any new op is not determined */
 
-    uct_ep_pending_purge(ep0(), purge_cb, NULL);
     EXPECT_EQ(num_pend_sends, m_req_purge_count);
-    EXPECT_GE(m_err_count, 0ul);
+    EXPECT_GT(m_err_count, 0ul);
 }
 
 UCS_TEST_SKIP_COND_P(test_uct_peer_failure, two_pairs_send,

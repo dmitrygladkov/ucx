@@ -197,6 +197,25 @@ static void uct_dc_mlx5_iface_progress_enable(uct_iface_h tl_iface, unsigned fla
     uct_base_iface_progress_enable_cb(&iface->super.super, iface->progress, flags);
 }
 
+static UCS_F_ALWAYS_INLINE void
+uct_dc_mlx5_update_tx_res(uct_dc_mlx5_iface_t *iface, uct_ib_mlx5_txwq_t *txwq,
+                          uct_rc_txqp_t *txqp, uint16_t hw_ci,
+                          uint8_t dci_index)
+{
+    uct_rc_txqp_available_set(txqp, uct_ib_mlx5_txwq_update_bb(txwq, hw_ci));
+    ucs_assert(uct_rc_txqp_available(txqp) <= txwq->bb_max);
+
+    uct_rc_iface_update_reads(&iface->super.super);
+
+    /**
+     * Note: DCI is released after handling completion callbacks,
+     *       to avoid OOO sends when this is the only missing resource.
+     */
+    uct_dc_mlx5_iface_dci_put(iface, dci_index);
+    uct_dc_mlx5_iface_progress_pending(iface,
+                                       iface->tx.dcis[dci_index].pool_index);
+}
+
 static UCS_F_ALWAYS_INLINE unsigned
 uct_dc_mlx5_poll_tx(uct_dc_mlx5_iface_t *iface)
 {
@@ -210,7 +229,8 @@ uct_dc_mlx5_poll_tx(uct_dc_mlx5_iface_t *iface)
     if (cqe == NULL) {
         return 0;
     }
-    UCS_STATS_UPDATE_COUNTER(iface->super.super.stats, UCT_RC_IFACE_STAT_TX_COMPLETION, 1);
+    UCS_STATS_UPDATE_COUNTER(iface->super.super.stats,
+                             UCT_RC_IFACE_STAT_TX_COMPLETION, 1);
 
     ucs_memory_cpu_load_fence();
 
@@ -223,15 +243,7 @@ uct_dc_mlx5_poll_tx(uct_dc_mlx5_iface_t *iface)
                    iface, dci_index, txqp, hw_ci);
 
     uct_rc_mlx5_txqp_process_tx_cqe(txqp, cqe, hw_ci);
-    uct_dc_mlx5_update_tx_res(iface, txwq, txqp, hw_ci);
-
-    /**
-     * Note: DCI is released after handling completion callbacks,
-     *       to avoid OOO sends when this is the only missing resource.
-     */
-    uct_dc_mlx5_iface_dci_put(iface, dci_index);
-    uct_dc_mlx5_iface_progress_pending(iface,
-                                       iface->tx.dcis[dci_index].pool_index);
+    uct_dc_mlx5_update_tx_res(iface, txwq, txqp, hw_ci, dci_index);
 
     return 1;
 }
@@ -263,6 +275,30 @@ static unsigned uct_dc_mlx5_iface_progress_ll(void *arg)
 static unsigned uct_dc_mlx5_iface_progress_tm(void *arg)
 {
     return uct_dc_mlx5_iface_progress(arg, UCT_RC_MLX5_POLL_FLAG_TM);
+}
+
+void uct_dc_mlx5_ep_handle_failure(uct_dc_mlx5_ep_t *ep, void *arg,
+                                   ucs_status_t ep_status)
+{
+    struct mlx5_cqe64 *cqe     = arg;
+    uct_iface_h tl_iface       = ep->super.super.iface;
+    uint8_t dci_index          = ep->dci;
+    uct_dc_mlx5_iface_t *iface = ucs_derived_of(tl_iface, uct_dc_mlx5_iface_t);
+    uct_rc_txqp_t *txqp        = &iface->tx.dcis[dci_index].txqp;
+    uct_ib_mlx5_txwq_t *txwq   = &iface->tx.dcis[dci_index].txwq;
+    uint16_t pi                = ntohs(cqe->wqe_counter);
+
+    ucs_assert(!uct_dc_mlx5_iface_is_dci_rand(iface));
+    ucs_assert(ep->dci != UCT_DC_MLX5_EP_NO_DCI);
+
+    uct_dc_mlx5_update_tx_res(iface, txwq, txqp, pi, dci_index);
+    uct_rc_txqp_purge_outstanding(&iface->super.super, txqp, ep_status, pi, 0);
+
+    uct_dc_mlx5_iface_set_ep_failed(iface, ep, cqe, txwq, ep_status);
+
+    if (ep->dci == UCT_DC_MLX5_EP_NO_DCI) {
+        uct_dc_mlx5_iface_reset_dci(iface, dci_index);
+    }
 }
 
 static void UCS_CLASS_DELETE_FUNC_NAME(uct_dc_mlx5_iface_t)(uct_iface_t*);

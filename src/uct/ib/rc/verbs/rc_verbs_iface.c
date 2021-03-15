@@ -63,13 +63,18 @@ static unsigned uct_rc_verbs_get_tx_res_count(uct_rc_verbs_ep_t *ep,
     return wc->wr_id - ep->txcnt.ci;
 }
 
-static void uct_rc_verbs_update_tx_res(uct_rc_iface_t *iface,
-                                       uct_rc_verbs_ep_t *ep, unsigned count)
+static void
+uct_rc_verbs_update_tx_res(uct_rc_iface_t *rc_iface,
+                           uct_rc_verbs_ep_t *rc_verbs_ep, unsigned count)
 {
-    ep->txcnt.ci += count;
-    uct_rc_txqp_available_add(&ep->super.txqp, count);
-    iface->tx.cq_available += count;
-    uct_rc_iface_update_reads(iface);
+    rc_verbs_ep->txcnt.ci += count;
+    uct_rc_txqp_available_add(&rc_verbs_ep->super.txqp, count);
+    rc_iface->tx.cq_available += count;
+    uct_rc_iface_update_reads(rc_iface);
+    ucs_arbiter_group_schedule(&rc_iface->tx.arbiter,
+                               &rc_verbs_ep->super.arb_group);
+    ucs_arbiter_dispatch(&rc_iface->tx.arbiter, 1, uct_rc_ep_process_pending,
+                         NULL);
 }
 
 static void uct_rc_verbs_handle_failure(uct_ib_iface_t *ib_iface, void *arg,
@@ -151,11 +156,6 @@ uct_rc_verbs_iface_poll_tx(uct_rc_verbs_iface_t *iface)
 
         uct_rc_txqp_completion_desc(&ep->super.txqp, ep->txcnt.ci + count);
         uct_rc_verbs_update_tx_res(&iface->super, ep, count);
-
-        ucs_arbiter_group_schedule(&iface->super.tx.arbiter,
-                                   &ep->super.arb_group);
-        ucs_arbiter_dispatch(&iface->super.tx.arbiter, 1,
-                             uct_rc_ep_process_pending, NULL);
     }
 
     return num_wcs;

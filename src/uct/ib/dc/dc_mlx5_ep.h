@@ -269,9 +269,6 @@ uct_dc_mlx5_ep_from_dci(uct_dc_mlx5_iface_t *iface, uint8_t dci_index)
     return iface->tx.dcis[dci_index].ep;
 }
 
-void uct_dc_mlx5_ep_handle_failure(uct_dc_mlx5_ep_t *ep, void *arg,
-                                   ucs_status_t status);
-
 static UCS_F_ALWAYS_INLINE ucs_status_t
 uct_dc_mlx5_ep_basic_init(uct_dc_mlx5_iface_t *iface, uct_dc_mlx5_ep_t *ep)
 {
