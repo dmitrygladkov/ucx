@@ -56,6 +56,7 @@ void ucs_close_fd(int *fd_p)
         return;
     }
 
+    fprintf(stderr, "close: %d\n", *fd_p);
     if (close(*fd_p) < 0) {
         ucs_warn("failed to close fd %d: %m", *fd_p);
         return;
@@ -141,6 +142,12 @@ ucs_status_t ucs_socket_create(int domain, int type, int *fd_p)
         return UCS_ERR_IO_ERROR;
     }
 
+<<<<<<< HEAD
+=======
+    fprintf(stderr, "socket_create: %d\n", fd);
+
+    ucs_socket_entry_put(fd, "socket");
+>>>>>>> af383f1... UCS/SOCK: add fprintfs
     *fd_p = fd;
     return UCS_OK;
 }
@@ -295,6 +302,13 @@ ucs_status_t ucs_socket_accept(int fd, struct sockaddr *addr, socklen_t *length_
         return status;
     }
 
+<<<<<<< HEAD
+=======
+    fprintf(stderr, "socket_create: %d\n", *accept_fd);
+
+    ucs_socket_entry_put(*accept_fd, "accept_socket");
+
+>>>>>>> af383f1... UCS/SOCK: add fprintfs
     return UCS_OK;
 }
 
