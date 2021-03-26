@@ -11,6 +11,7 @@
 
 #include <ucs/debug/log.h>
 #include <ucs/debug/assert.h>
+#include <ucs/datastruct/khash.h>
 #include <ucs/sys/string.h>
 #include <ucs/sys/sock.h>
 #include <ucs/sys/math.h>
@@ -39,6 +40,110 @@ typedef ssize_t (*ucs_socket_iov_func_t)(int fd, const struct msghdr *msg,
                                          int flags);
 
 
+typedef struct ucs_socket_fd_entry {
+    int  fd;
+    char name[];
+} ucs_socket_fd_entry_t;
+
+
+KHASH_MAP_INIT_INT(ucs_socket_fd_entry_hash, ucs_socket_fd_entry_t*);
+
+
+typedef struct ucs_socket_context {
+    int                               tracking_enabled;
+    pthread_mutex_t                   lock;
+    khash_t(ucs_socket_fd_entry_hash) entries;
+} ucs_socket_context_t;
+
+
+/* Global context for tracking created socket file descriptors */
+static ucs_socket_context_t ucs_socket_context = {
+    .tracking_enabled = 0,
+    .lock             = PTHREAD_MUTEX_INITIALIZER
+};
+
+
+static void ucs_socket_entry_put(int fd, const char* name)
+{
+    ucs_socket_fd_entry_t *entry;
+    khiter_t iter;
+    int ret;
+
+    entry = ucs_malloc(sizeof(*entry) + strlen(name) + 1, "socket_fd_entry");
+    if (entry == NULL) {
+        return;
+    }
+
+    entry->fd = fd;
+    ucs_strncpy_zero(entry->name, name, strlen(name) + 1);
+
+    pthread_mutex_lock(&ucs_socket_context.lock);
+
+    iter = kh_put(ucs_socket_fd_entry_hash, &ucs_socket_context.entries, fd, &ret);
+    ucs_assertv((ret == UCS_KH_PUT_BUCKET_EMPTY) ||
+                (ret == UCS_KH_PUT_BUCKET_CLEAR), "ret = %d", ret);
+    kh_val(&ucs_socket_context.entries, iter) = entry;
+
+    pthread_mutex_unlock(&ucs_socket_context.lock);
+}
+
+static void ucs_socket_entry_release(int fd)
+{
+    ucs_socket_fd_entry_t *entry;
+    khiter_t iter;
+
+    pthread_mutex_lock(&ucs_socket_context.lock);
+
+    iter = kh_get(ucs_socket_fd_entry_hash, &ucs_socket_context.entries, fd);
+    if (iter == kh_end(&ucs_socket_context.entries)) {
+        ucs_warn("socket fd %d doesn't exist in hash", fd);
+        goto out;
+    }
+
+    entry = kh_val(&ucs_socket_context.entries, iter);
+    kh_del(ucs_socket_fd_entry_hash, &ucs_socket_context.entries, iter);
+    ucs_free(entry);
+
+out:
+    pthread_mutex_unlock(&ucs_socket_context.lock);
+}
+
+void ucs_socket_tracking_init()
+{
+    ucs_assert(ucs_socket_context.tracking_enabled == 0);
+
+    pthread_mutex_lock(&ucs_socket_context.lock);
+
+    ucs_debug("socket tracking enabled");
+    ucs_socket_context.tracking_enabled = 1;
+    kh_init_inplace(ucs_socket_fd_entry_hash, &ucs_socket_context.entries);
+
+    pthread_mutex_unlock(&ucs_socket_context.lock);
+}
+
+void ucs_socket_tracking_cleanup()
+{
+    ucs_socket_fd_entry_t *entry;
+
+    pthread_mutex_lock(&ucs_socket_context.lock);
+
+    if (!ucs_socket_context.tracking_enabled) {
+        goto out;
+    }
+
+    ucs_socket_context.tracking_enabled = 0;
+    ucs_debug("socket tracking disabled");
+
+    /* cleanup entries */
+    kh_foreach_value(&ucs_socket_context.entries, entry, {
+         ucs_warn("socket fd %d (%s) was not closed", entry->fd, entry->name);
+         ucs_free(entry);
+    });
+
+out:
+    pthread_mutex_unlock(&ucs_socket_context.lock);
+}
+
 static void ucs_socket_print_error_info(int sys_errno)
 {
     if (sys_errno == EMFILE) {
@@ -57,11 +162,12 @@ void ucs_close_fd(int *fd_p)
     }
 
     fprintf(stderr, "close: %d\n", *fd_p);
+    ucs_socket_entry_release(*fd_p);
     if (close(*fd_p) < 0) {
         ucs_warn("failed to close fd %d: %m", *fd_p);
-        return;
     }
 
+    ucs_socket_entry_release(*fd_p);
     *fd_p = -1;
 }
 
@@ -142,12 +248,9 @@ ucs_status_t ucs_socket_create(int domain, int type, int *fd_p)
         return UCS_ERR_IO_ERROR;
     }
 
-<<<<<<< HEAD
-=======
     fprintf(stderr, "socket_create: %d\n", fd);
-
     ucs_socket_entry_put(fd, "socket");
->>>>>>> af383f1... UCS/SOCK: add fprintfs
+
     *fd_p = fd;
     return UCS_OK;
 }
@@ -302,13 +405,10 @@ ucs_status_t ucs_socket_accept(int fd, struct sockaddr *addr, socklen_t *length_
         return status;
     }
 
-<<<<<<< HEAD
-=======
     fprintf(stderr, "socket_create: %d\n", *accept_fd);
 
     ucs_socket_entry_put(*accept_fd, "accept_socket");
 
->>>>>>> af383f1... UCS/SOCK: add fprintfs
     return UCS_OK;
 }
 
