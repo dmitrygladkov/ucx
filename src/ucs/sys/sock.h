@@ -34,6 +34,19 @@ BEGIN_C_DECLS
 #define UCS_SOCKET_INET6_PORT(_addr) (((struct sockaddr_in6*)(_addr))->sin6_port)
 
 
+
+/**
+ * Initalize socket file descriptors tracking functionality.
+ */
+void ucs_socket_tracking_init();
+
+
+/**
+ * Cleanup socket file descriptors tracking functionality.
+ */
+void ucs_socket_tracking_cleanup();
+
+
 /**
  * Close the given file descriptor.
  *

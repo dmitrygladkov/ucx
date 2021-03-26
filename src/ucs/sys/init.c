@@ -19,6 +19,7 @@
 #include <ucs/stats/stats.h>
 #include <ucs/async/async.h>
 #include <ucs/sys/sys.h>
+#include <ucs/sys/sock.h>
 #include <ucs/sys/topo.h>
 #include <ucs/sys/math.h>
 
@@ -96,6 +97,7 @@ static void UCS_F_CTOR ucs_init()
     ucs_stats_init();
 #endif
     ucs_memtrack_init();
+    ucs_socket_tracking_init();
     ucs_debug_init();
     ucs_profile_global_init();
     ucs_async_global_init();
@@ -113,6 +115,7 @@ static void UCS_F_DTOR ucs_cleanup(void)
     ucs_async_global_cleanup();
     ucs_profile_global_cleanup();
     ucs_debug_cleanup(0);
+    ucs_socket_tracking_cleanup();
     ucs_memtrack_cleanup();
 #ifdef ENABLE_STATS
     ucs_stats_cleanup();
