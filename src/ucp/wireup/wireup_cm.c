@@ -1374,7 +1374,6 @@ void ucp_ep_cm_disconnect_cm_lane(ucp_ep_h ucp_ep)
     ucs_assert_always(uct_cm_ep != NULL);
     /* No reason to try disconnect twice */
     ucs_assert(!(ucp_ep->flags & UCP_EP_FLAG_DISCONNECTED_CM_LANE));
-    ucs_assert(!(ucp_ep->flags & UCP_EP_FLAG_FAILED));
 
     ucp_ep_update_flags(ucp_ep, UCP_EP_FLAG_DISCONNECTED_CM_LANE,
                         UCP_EP_FLAG_LOCAL_CONNECTED);
