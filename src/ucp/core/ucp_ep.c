@@ -2536,6 +2536,7 @@ uct_ep_h ucp_ep_get_cm_uct_ep(ucp_ep_h ep)
 int ucp_ep_is_cm_local_connected(ucp_ep_h ep)
 {
     return (ucp_ep_get_cm_uct_ep(ep) != NULL) &&
+           (ucp_is_uct_ep_failed(ucp_ep_get_cm_uct_ep(ep))) &&
            (ep->flags & UCP_EP_FLAG_LOCAL_CONNECTED);
 }
 
