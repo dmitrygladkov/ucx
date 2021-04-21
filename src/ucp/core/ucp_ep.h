@@ -629,7 +629,8 @@ ucs_status_t ucp_ep_flush_progress_pending(uct_pending_req_t *self);
 
 void ucp_ep_flush_completion(uct_completion_t *self);
 
-void ucp_ep_flush_request_ff(ucp_request_t *req, ucs_status_t status);
+void ucp_ep_flush_request_ff(ucp_request_t *req, ucs_status_t status,
+                             int from_pending);
 
 void
 ucp_ep_purge_lanes(ucp_ep_h ep, uct_pending_purge_callback_t purge_cb,

@@ -275,15 +275,16 @@ void ucp_ep_flush_completion(uct_completion_t *self)
     ucp_flush_check_completion(req);
 }
 
-void ucp_ep_flush_request_ff(ucp_request_t *req, ucs_status_t status)
+void ucp_ep_flush_request_ff(ucp_request_t *req, ucs_status_t status,
+                             int from_pending)
 {
     /* Calculate how many completions to emulate: 1 for every lane we did not
-     * start to flush yet, plus one for the lane from which we just removed
-     * this request from its pending queue
+     * start to flush yet, plus one (if running from purge pending callback) for
+     * the lane from which we just removed this request from its pending queue
      */
     int num_comps = req->send.flush.num_lanes -
-                    ucs_popcount(req->send.flush.started_lanes)
-                    + 1;
+                    ucs_popcount(req->send.flush.started_lanes) +
+                    (from_pending == 1);
 
     ucp_trace_req(req, "fast-forward flush, comp-=%d num_lanes %d started 0x%x",
                   num_comps, req->send.flush.num_lanes,

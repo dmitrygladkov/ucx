@@ -417,7 +417,7 @@ void ucp_request_send_state_ff(ucp_request_t *req, ucs_status_t status)
     if (req->send.uct.func == ucp_proto_progress_am_single) {
         req->send.proto.comp_cb(req);
     } else if (req->send.state.uct_comp.func == ucp_ep_flush_completion) {
-        ucp_ep_flush_request_ff(req, status);
+        ucp_ep_flush_request_ff(req, status, 1);
     } else if (req->send.state.uct_comp.func != NULL) {
         /* Fast-forward the sending state to complete the operation when last
          * network completion callback is called

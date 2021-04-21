@@ -2738,7 +2738,10 @@ static void ucp_ep_req_purge(ucp_ep_h ucp_ep, ucp_request_t *req,
 void ucp_ep_reqs_purge(ucp_ep_h ucp_ep, ucs_status_t status)
 {
     ucs_hlist_head_t *proto_reqs = &ucp_ep_ext_gen(ucp_ep)->proto_reqs;
+    ucp_worker_h worker          = ucp_ep->worker;
+    ucp_ep_flush_state_t *flush_state;
     ucp_request_t *req;
+    uint32_t num_comps;
 
     while (!ucs_hlist_is_empty(proto_reqs)) {
         req = ucs_hlist_head_elem(proto_reqs, ucp_request_t, send.list);
@@ -2749,10 +2752,21 @@ void ucp_ep_reqs_purge(ucp_ep_h ucp_ep, ucs_status_t status)
          * context) and not invalidated yet, also remote EP ID is already set */
         !(ucp_ep->flags &
           (UCP_EP_FLAG_ON_MATCH_CTX | UCP_EP_FLAG_CLOSE_REQ_VALID))) {
-        ucs_hlist_for_each_extract(req, &ucp_ep_flush_state(ucp_ep)->reqs,
-                                   send.list) {
-            ucp_ep_flush_request_ff(req, status);
+        flush_state = ucp_ep_flush_state(ucp_ep);
+        ucs_hlist_for_each_extract(req, &flush_state->reqs, send.list) {
+            ucp_ep_flush_request_ff(req, status, 0);
         }
+
+        /* Adjust 'comp_sn' value to a value stored in 'send_sn' because those
+         * uncompleted operations won't be completed anymore */
+        ucs_assert(flush_state->send_sn >= flush_state->cmpl_sn);
+        num_comps            = flush_state->send_sn - flush_state->cmpl_sn;
+        flush_state->cmpl_sn = flush_state->send_sn;
+
+        /* Adjsut 'flush_ops_count' value to a number of uncompleted operations
+         * which are waiting for remote completions in this flush state */
+        ucs_assert(worker->flush_ops_count >= num_comps);
+        worker->flush_ops_count -= num_comps;
     }
 }
 
