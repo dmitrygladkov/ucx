@@ -707,7 +707,7 @@ ucp_wireup_send_ep_removed(ucp_worker_h worker, const ucp_wireup_msg_t *msg,
     status = ucp_wireup_init_lanes(reply_ep, ep_init_flags, &ucp_tl_bitmap_max,
                                    remote_address, addr_indices);
     if (status != UCS_OK) {
-        goto destroy_ep;
+        goto err_delete_ep;
     }
 
     ucp_ep_update_remote_id(reply_ep, msg->src_ep_id);
@@ -727,6 +727,10 @@ ucp_wireup_send_ep_removed(ucp_worker_h worker, const ucp_wireup_msg_t *msg,
 
 destroy_ep:
     ucp_ep_disconnected(reply_ep, 0);
+    return;
+
+err_delete_ep:
+    ucp_ep_delete(reply_ep);
 }
 
 static UCS_F_NOINLINE

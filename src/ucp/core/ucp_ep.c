@@ -340,7 +340,7 @@ err:
     return status;
 }
 
-static void ucp_ep_delete(ucp_ep_h ep)
+void ucp_ep_delete(ucp_ep_h ep)
 {
     if (!(ep->flags & UCP_EP_FLAG_INTERNAL)) {
         ucp_worker_keepalive_remove_ep(ep);
