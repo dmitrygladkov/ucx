@@ -184,6 +184,18 @@ public:
     UCS_TEST_BASE_IMPL;
 };
 
+
+#define FOR_EACH_ENTITY(_iter) \
+    for (ucs::ptr_vector<entity>::const_iterator _iter = m_entities.begin(); \
+         _iter != m_entities.end(); ++_iter)
+
+ 
+#define TEST_FOR_EACH_ENTITY(_test, _iter) \
+    for (ucs::ptr_vector<entity>::const_iterator _iter = \
+                 _test->m_entities.begin(); \
+         _iter != _test->m_entities.end(); ++_iter)
+
+
 /**
  * UCT/UCP tests common storage for tests entities
  */

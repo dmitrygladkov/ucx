@@ -112,6 +112,19 @@ void test_ucp_peer_failure::err_cb(void *arg, ucp_ep_h ep, ucs_status_t status) 
                 (UCS_ERR_ENDPOINT_TIMEOUT == status));
     self->m_err_status = status;
     ++self->m_err_count;
+
+    TEST_FOR_EACH_ENTITY(self, iter) {
+        for (int worker_index = 0; worker_index < (*iter)->get_num_workers();
+             ++worker_index) {
+            for (int ep_index = 0; ep_index < (*iter)->get_num_eps();
+                 ++ep_index) {
+                if ((*iter)->ep(worker_index, ep_index) == ep) {
+                    (*iter)->add_err(status);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /* stable pair: sender = ep(0), receiver: entity(size - 1)

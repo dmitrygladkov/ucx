@@ -2759,7 +2759,8 @@ void ucp_ep_reqs_purge(ucp_ep_h ucp_ep, ucs_status_t status)
 
         /* Adjust 'comp_sn' value to a value stored in 'send_sn' because those
          * uncompleted operations won't be completed anymore */
-        ucs_assert(flush_state->send_sn >= flush_state->cmpl_sn);
+        ucs_assert(UCS_CIRCULAR_COMPARE32(flush_state->cmpl_sn, <=,
+                                          flush_state->send_sn));
         num_comps            = flush_state->send_sn - flush_state->cmpl_sn;
         flush_state->cmpl_sn = flush_state->send_sn;
 
