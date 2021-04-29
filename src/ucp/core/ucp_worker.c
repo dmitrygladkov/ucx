@@ -455,8 +455,9 @@ static unsigned ucp_worker_iface_err_handle_progress(void *arg)
         } else {
             ucp_ep_invoke_err_cb(ucp_ep, status);
         }
-    } else {
-        ucs_debug("ep %p: destroy internal endpoint due to peer failure", ucp_ep);
+    } else if (!(ucp_ep->flags & UCP_EP_FLAG_INTERNAL)) {
+        ucs_debug("ep %p: destroy endpoint which is not exposed to a user due"
+                  " to peer failure", ucp_ep);
         ucp_ep_disconnected(ucp_ep, 1);
     }
 
@@ -2058,6 +2059,7 @@ ucs_status_t ucp_worker_create(ucp_context_h context,
     ucs_list_head_init(&worker->arm_ifaces);
     ucs_list_head_init(&worker->stream_ready_eps);
     ucs_list_head_init(&worker->all_eps);
+    ucs_list_head_init(&worker->internal_eps);
     kh_init_inplace(ucp_worker_rkey_config, &worker->rkey_config_hash);
     kh_init_inplace(ucp_worker_discard_uct_ep_hash, &worker->discard_uct_ep_hash);
 
@@ -2415,13 +2417,14 @@ static void ucp_worker_discard_uct_ep_cleanup(ucp_worker_h worker)
     })
 }
 
-static void ucp_worker_destroy_eps(ucp_worker_h worker)
+static void ucp_worker_destroy_eps(ucp_worker_h worker, ucs_list_link_t *eps,
+                                   const char *eps_name)
 {
     ucp_ep_ext_gen_t *ep_ext, *tmp;
     ucp_ep_h ep;
 
-    ucs_debug("worker %p: destroy all endpoints", worker);
-    ucs_list_for_each_safe(ep_ext, tmp, &worker->all_eps, ep_list) {
+    ucs_debug("worker %p: destroy %s endpoints", worker, eps_name);
+    ucs_list_for_each_safe(ep_ext, tmp, eps, ep_list) {
         ep = ucp_ep_from_ext_gen(ep_ext);
         /* Cleanup pending operations on the UCP EP before destroying it, since
          * ucp_ep_destroy_internal() expects the pending queues of the UCT EPs
@@ -2438,7 +2441,8 @@ void ucp_worker_destroy(ucp_worker_h worker)
 
     UCS_ASYNC_BLOCK(&worker->async);
     uct_worker_progress_unregister_safe(worker->uct, &worker->keepalive.cb_id);
-    ucp_worker_destroy_eps(worker);
+    ucp_worker_destroy_eps(worker, &worker->all_eps, "all");
+    ucp_worker_destroy_eps(worker, &worker->internal_eps, "internal");
     ucp_worker_remove_am_handlers(worker);
     ucp_am_cleanup(worker);
     ucp_worker_discard_uct_ep_cleanup(worker);
@@ -2453,7 +2457,6 @@ void ucp_worker_destroy(ucp_worker_h worker)
     ucs_vfs_obj_remove(worker);
     ucp_tag_match_cleanup(&worker->tm);
     ucp_worker_destroy_mpools(worker);
-    ucp_worker_destroy_mem_type_endpoints(worker);
     ucp_worker_close_cms(worker);
     ucp_worker_close_ifaces(worker);
     ucs_conn_match_cleanup(&worker->conn_match_ctx);
@@ -2926,21 +2929,23 @@ void ucp_worker_keepalive_remove_ep(ucp_ep_h ep)
 {
     ucp_worker_h worker = ep->worker;
 
-    ucs_assert(!(ep->flags & UCP_EP_FLAG_INTERNAL));
-
     if (!ucp_worker_keepalive_is_enabled(worker)) {
         ucs_assert(worker->keepalive.iter == &worker->all_eps);
         return;
     }
 
-    ucs_assert(!ucs_list_is_empty(&worker->all_eps));
+    ucs_assert(!ucs_list_is_empty(&worker->all_eps) ||
+               ((ep->flags & UCP_EP_FLAG_INTERNAL) &&
+                !ucs_list_is_empty(&worker->internal_eps)));
 
     if (ucs_list_is_only(&worker->all_eps, &ucp_ep_ext_gen(ep)->ep_list)) {
         /* this is the last EP in worker */
+        ucs_assert(!(ep->flags & UCP_EP_FLAG_INTERNAL));
         worker->keepalive.iter = &worker->all_eps;
     } else if (worker->keepalive.iter == &ucp_ep_ext_gen(ep)->ep_list) {
         /* if iterator points into EP to be removed - then
          * step to next EP */
+        ucs_assert(!(ep->flags & UCP_EP_FLAG_INTERNAL));
         ucp_worker_keepalive_next_ep(worker);
     }
 }

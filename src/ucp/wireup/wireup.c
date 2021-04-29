@@ -688,7 +688,8 @@ ucp_wireup_send_ep_removed(ucp_worker_h worker, const ucp_wireup_msg_t *msg,
 {
     /* Request a peer failure detection support from a reply EP to be able to do
      * discarding of lanes when destroying all UCP EPs in UCP worker destroy */
-    unsigned ep_init_flags = UCP_EP_INIT_ERR_MODE_PEER_FAILURE;
+    unsigned ep_init_flags = UCP_EP_INIT_ERR_MODE_PEER_FAILURE |
+                             UCP_EP_INIT_FLAG_INTERNAL;
     ucs_status_t status;
     ucp_ep_h reply_ep;
     unsigned addr_indices[UCP_MAX_LANES];

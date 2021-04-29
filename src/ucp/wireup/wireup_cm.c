@@ -391,17 +391,13 @@ ucp_cm_client_resolve_cb(void *user_data, const uct_cm_ep_resolve_args_t *args)
 
     /* Create tmp ep which will hold local tl addresses until connect
      * event arrives, to avoid asynchronous ep reconfiguration. */
-    status = ucp_ep_create_base(worker, "tmp_cm", "tmp cm client",
-                                &cm_wireup_ep->tmp_ep);
+    status = ucp_worker_create_ep(worker, UCP_EP_INIT_FLAG_INTERNAL, "tmp_cm",
+                                  "tmp cm client", &cm_wireup_ep->tmp_ep);
     if (status != UCS_OK) {
         goto out_check_err;
     }
 
-    ucp_ep_ext_control(cm_wireup_ep->tmp_ep)->local_ep_id =
-            ucp_ep_ext_control(ep)->local_ep_id;
-
     ucp_ep_flush_state_reset(cm_wireup_ep->tmp_ep);
-    ucp_ep_update_flags(cm_wireup_ep->tmp_ep, UCP_EP_FLAG_INTERNAL, 0);
     ucs_debug("ep %p: created tmp_ep %p", ep, cm_wireup_ep->tmp_ep);
 
     status = ucp_worker_get_ep_config(worker, &key, 0,
@@ -510,10 +506,7 @@ void ucp_cm_client_restore_ep(ucp_wireup_ep_t *wireup_cm_ep, ucp_ep_h ucp_ep)
         }
     }
 
-    /* TMP EP is not an owner of local EP ID */
-    ucs_assert(ucp_ep_local_id(tmp_ep) == ucp_ep_local_id(ucp_ep));
-    ucp_ep_ext_control(tmp_ep)->local_ep_id = UCP_EP_ID_INVALID;
-    ucp_ep_remove_ref(tmp_ep); /* not needed anymore */
+    ucp_ep_disconnected(tmp_ep, 1); /* Not needed anymore */
     wireup_cm_ep->tmp_ep = NULL;
 }
 
