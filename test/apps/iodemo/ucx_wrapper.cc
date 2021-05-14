@@ -676,6 +676,7 @@ void UcxConnection::disconnect(UcxCallback *callback)
     assert(_ep != NULL);
 
     UCX_CONN_LOG << "destroying, ep is " << _ep;
+    ucp_ep_keepalive(_ep);
     ep_close(UCP_EP_CLOSE_MODE_FORCE);
 
     _disconnect_cb = callback;

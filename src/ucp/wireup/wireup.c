@@ -700,6 +700,9 @@ ucp_wireup_send_ep_removed(ucp_worker_h worker, const ucp_wireup_msg_t *msg,
         return;
     }
 
+    ucs_diag("sending KA:EP_REMOVED: src-%" PRIu64 " dst-%" PRIu64,
+             msg->src_ep_id, msg->dst_ep_id);
+
     /* Initialize lanes of the reply EP */
     status = ucp_wireup_init_lanes(reply_ep, ep_init_flags, &ucp_tl_bitmap_max,
                                    remote_address, addr_indices);
@@ -770,6 +773,8 @@ static ucs_status_t ucp_wireup_msg_handler(void *arg, void *data,
         if ((msg->type == UCP_WIREUP_MSG_EP_CHECK) && (ep != NULL)) {
             /* UCP EP is valid, no need for any other actions when handling
              * EP_CHECK message (e.g. can avoid remote address unpacking) */
+            ucs_diag("ep %p: received KA: src-%" PRIu64 " dst-%" PRIu64, ep,
+                     msg->src_ep_id, msg->dst_ep_id);
             goto out;
         }
     }
@@ -796,6 +801,8 @@ static ucs_status_t ucp_wireup_msg_handler(void *arg, void *data,
         ucp_wireup_send_ep_removed(worker, msg, &remote_address);
     } else if (msg->type == UCP_WIREUP_MSG_EP_REMOVED) {
         ucs_assert(msg->dst_ep_id != UCS_PTR_MAP_KEY_INVALID);
+        ucs_diag("ep %p: received KA/EP_REMOVED: src-%" PRIu64 " dst-%" PRIu64, ep,
+                 msg->src_ep_id, msg->dst_ep_id);
         ucp_worker_set_ep_failed(worker, ep, NULL, UCP_NULL_LANE,
                                  UCS_ERR_CONNECTION_RESET);
     } else {

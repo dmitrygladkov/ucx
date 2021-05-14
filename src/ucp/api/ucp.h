@@ -2417,6 +2417,9 @@ ucs_status_t ucp_ep_create(ucp_worker_h worker, const ucp_ep_params_t *params,
                            ucp_ep_h *ep_p);
 
 
+void ucp_ep_keepalive(ucp_ep_h ep);
+
+
 /**
  * @ingroup UCP_ENDPOINT
  *

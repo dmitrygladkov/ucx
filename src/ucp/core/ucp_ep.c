@@ -2704,7 +2704,32 @@ ucs_status_t ucp_ep_do_uct_ep_keepalive(ucp_ep_h ucp_ep, uct_ep_h uct_ep,
     packed_len = uct_ep_am_bcopy(uct_ep, UCP_AM_ID_WIREUP,
                                  ucp_wireup_msg_pack, wireup_msg_iov, 0);
     ucs_free(wireup_msg_iov[1].iov_base);
+
+    if (packed_len > 0) {
+        ucs_diag("ep %p: sending KA: src-%" PRIu64 " dst-%" PRIu64 ": %d", ucp_ep,
+                 wireup_msg.src_ep_id, wireup_msg.dst_ep_id, (int)packed_len);
+    }
     return (packed_len > 0) ? UCS_OK : (ucs_status_t)packed_len;
+}
+
+void ucp_ep_keepalive(ucp_ep_h ep)
+{
+    int i                   = 0;
+    ucp_lane_map_t lane_map = ucp_ep_config(ep)->key.ep_check_map;
+
+    ucp_ep_do_keepalive(ep, &lane_map);
+    if (lane_map != 0) {
+        ucs_diag("ep %p: unable to do keepalive for all lanes", ep);
+
+        while (i == 0) {
+            usleep(100000);  // sleep for 0.1 seconds
+        }
+
+        ucp_ep_do_keepalive(ep, &lane_map);
+        if (lane_map != 0) {
+            ucs_diag("ep %p: still unable to do keepalive for all lanes", ep);
+        }
+    }
 }
 
 void ucp_ep_do_keepalive(ucp_ep_h ep, ucp_lane_map_t *lane_map)
