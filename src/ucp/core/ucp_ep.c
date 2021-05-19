@@ -2714,20 +2714,22 @@ ucs_status_t ucp_ep_do_uct_ep_keepalive(ucp_ep_h ucp_ep, uct_ep_h uct_ep,
 
 void ucp_ep_keepalive(ucp_ep_h ep)
 {
-    int i                   = 0;
+    //int i                   = 0;
     ucp_lane_map_t lane_map = ucp_ep_config(ep)->key.ep_check_map;
 
     ucp_ep_do_keepalive(ep, &lane_map);
     if (lane_map != 0) {
-        ucs_diag("ep %p: unable to do keepalive for all lanes", ep);
+        ucs_diag("ep %p: unable to do keepalive for all lanes (%p, %p)", ep,
+                 ep->uct_eps[0], ep->uct_eps[1]);
 
-        while (i == 0) {
+        /*while (i == 0) {
             usleep(100000);  // sleep for 0.1 seconds
-        }
+        }*/
 
         ucp_ep_do_keepalive(ep, &lane_map);
         if (lane_map != 0) {
-            ucs_diag("ep %p: still unable to do keepalive for all lanes", ep);
+            ucs_diag("ep %p: still unable to do keepalive for all lanes (%p, %p)", ep,
+                     ep->uct_eps[0], ep->uct_eps[1]);
         }
     }
 }
