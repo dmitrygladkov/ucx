@@ -1350,6 +1350,7 @@ ucs_status_t uct_dc_mlx5_ep_check_fc(uct_dc_mlx5_iface_t *iface, uct_dc_mlx5_ep_
     if (iface->super.super.config.fc_enabled) {
         UCT_RC_CHECK_FC_WND(&ep->fc, ep->super.stats);
         if (ep->fc.fc_wnd == iface->super.super.config.fc_hard_thresh) {
+            ucs_diag("uct_ep %p: sent FC_HARD_REQ", ep);
             status = uct_rc_fc_ctrl(&ep->super.super,
                                     UCT_RC_EP_FLAG_FC_HARD_REQ,
                                     NULL);

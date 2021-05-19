@@ -1025,6 +1025,7 @@ void uct_dc_mlx5_iface_cleanup_fc_ep(uct_dc_mlx5_iface_t *iface)
 
 ucs_status_t uct_dc_mlx5_iface_fc_grant(uct_pending_req_t *self)
 {
+    uct_dc_fc_request_t *dc_req= ucs_derived_of(self, uct_dc_fc_request_t);
     uct_rc_pending_req_t *freq = ucs_derived_of(self, uct_rc_pending_req_t);
     uct_dc_mlx5_ep_t *ep       = ucs_derived_of(freq->ep, uct_dc_mlx5_ep_t);
     uct_rc_iface_t *iface      = ucs_derived_of(ep->super.super.iface,
@@ -1035,6 +1036,7 @@ ucs_status_t uct_dc_mlx5_iface_fc_grant(uct_pending_req_t *self)
 
     status = uct_rc_fc_ctrl(&ep->super.super, UCT_RC_EP_FC_PURE_GRANT, freq);
     if (status == UCS_OK) {
+        ucs_diag("uct_ep %p: sent FC_PURE_GRANT to %p", ep, (void*)dc_req->sender.ep);
         ucs_mpool_put(freq);
         UCS_STATS_UPDATE_COUNTER(ep->fc.stats, UCT_RC_FC_STAT_TX_PURE_GRANT, 1);
     }
@@ -1069,6 +1071,10 @@ ucs_status_t uct_dc_mlx5_iface_fc_handler(uct_rc_iface_t *rc_iface, unsigned qp_
             return UCS_ERR_NO_MEMORY;
         }
 
+        sender = (uct_dc_fc_sender_data_t *)(hdr + 1);
+        ucs_diag("uct_ep %p: received FC_HARD_REQ from %p", ep,
+                 (uct_dc_fc_sender_data_t*)sender->ep);
+
         dc_req->super.super.func = uct_dc_mlx5_iface_fc_grant;
         dc_req->super.ep         = &ep->super.super;
         dc_req->dct_num          = imm_data;
@@ -1090,6 +1096,14 @@ ucs_status_t uct_dc_mlx5_iface_fc_handler(uct_rc_iface_t *rc_iface, unsigned qp_
         it = kh_get(uct_dc_mlx5_fc_hash, &iface->tx.fc_hash, sender->ep);
         if ((it == kh_end(&iface->tx.fc_hash)) ||
             (kh_value(&iface->tx.fc_hash, it) != sender->payload.seq)) {
+            if (it != kh_end(&iface->tx.fc_hash)) {
+                ucs_diag("FC_PURE_REQ_HANDLE: got %zu vs expected %zu for uct_ep %p",
+                         sender->payload.seq, kh_value(&iface->tx.fc_hash, it),
+                         (void*)sender->ep);
+            } else if (it == kh_end(&iface->tx.fc_hash)) {
+                ucs_diag("FC_PURE_REQ_HANDLE: can't find for uct_ep %p",
+                         (void*)sender->ep);
+            }
             /* Just ignore, ep was removed. We either not expecting grant on
              * this EP or this is not the same grant sequence number we are
              * expecting. */
@@ -1099,6 +1113,7 @@ ucs_status_t uct_dc_mlx5_iface_fc_handler(uct_rc_iface_t *rc_iface, unsigned qp_
         ep      = (uct_dc_mlx5_ep_t *)sender->ep;
         cur_wnd = ep->fc.fc_wnd;
 
+        ucs_diag("uct_ep %p: received FC_PURE_GRANT", ep);
         /* Peer granted resources, so update wnd */
         ep->fc.fc_wnd = rc_iface->config.fc_wnd_size;
 
@@ -1116,6 +1131,8 @@ ucs_status_t uct_dc_mlx5_iface_fc_handler(uct_rc_iface_t *rc_iface, unsigned qp_
             ucs_arbiter_group_schedule(waitq, group);
             uct_dc_mlx5_iface_progress_pending(iface, pool_index);
         }
+    } else {
+        ucs_fatal("unexpected FC packet (%u) received", fc_hdr);
     }
 
     return UCS_OK;
