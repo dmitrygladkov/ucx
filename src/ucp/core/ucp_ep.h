@@ -430,6 +430,9 @@ typedef struct {
     ucs_ptr_map_key_t        remote_ep_id; /* Remote EP ID */
     ucp_err_handler_cb_t     err_cb; /* Error handler */
     ucp_ep_close_proto_req_t close_req; /* Close protocol request */
+#if UCS_ENABLE_ASSERT
+    size_t                   ka_count; /* Number of KA rounds done */
+#endif
 } ucp_ep_ext_control_t;
 
 

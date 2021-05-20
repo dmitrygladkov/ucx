@@ -2009,12 +2009,15 @@ err:
 
 static UCS_F_ALWAYS_INLINE void ucp_worker_keepalive_reset(ucp_worker_h worker)
 {
-    worker->keepalive.cb_id      = UCS_CALLBACKQ_ID_NULL;
-    worker->keepalive.last_round = 0;
-    worker->keepalive.lane_map   = 0;
-    worker->keepalive.ep_count   = 0;
-    worker->keepalive.iter_count = 0;
-    worker->keepalive.iter       = &worker->all_eps;
+    worker->keepalive.cb_id       = UCS_CALLBACKQ_ID_NULL;
+    worker->keepalive.last_round  = 0;
+    worker->keepalive.lane_map    = 0;
+    worker->keepalive.ep_count    = 0;
+    worker->keepalive.iter_count  = 0;
+    worker->keepalive.iter        = &worker->all_eps;
+#if UCS_ENABLE_ASSERT
+    worker->keepalive.round_count = 0;
+#endif
 }
 
 static void ucp_worker_destroy_configs(ucp_worker_h worker)
@@ -2911,6 +2914,7 @@ ucp_worker_do_keepalive_progress(ucp_worker_h worker)
 {
     unsigned ka_ep_count = 0;
     unsigned max_ka_ep_count;
+    unsigned allow_ka_ep_count;
     ucs_time_t now;
     ucp_ep_h ep;
 
@@ -2937,14 +2941,17 @@ ucp_worker_do_keepalive_progress(ucp_worker_h worker)
         ucp_worker_keepalive_next_ep(worker);
     }
 
-    max_ka_ep_count = ucs_min(worker->context->config.ext.keepalive_num_eps,
-                              worker->num_all_eps) - worker->keepalive.ep_count;
+    max_ka_ep_count   = ucs_min(worker->context->config.ext.keepalive_num_eps,
+                                worker->num_all_eps);
+    allow_ka_ep_count = (worker->keepalive.ep_count < max_ka_ep_count) ?
+                                (max_ka_ep_count - worker->keepalive.ep_count) :
+                                0;
 
     /* Use own loop for elements because standard for_each skips
      * head element */
     /* TODO: use more optimal algo to enumerate EPs to keepalive
      * (linked list) */
-    do {
+    while (ka_ep_count < allow_ka_ep_count) {
         ep = ucp_worker_keepalive_current_ep(worker);
         ucs_trace_func("worker %p: do keepalive on ep %p lane_map 0x%x", worker,
                        ep, worker->keepalive.lane_map);
@@ -2957,13 +2964,28 @@ ucp_worker_do_keepalive_progress(ucp_worker_h worker)
             goto out;
         }
 
+#if UCS_ENABLE_ASSERT
+        ucp_ep_ext_control(ep)->ka_count++;
+        /* Difference between the number of EP keepalive rounds and total number
+         * of KA rounds done on Worker must be <= 2, because keepalive could be
+         * done twice for the same EP in case of number of EPs was decreased */
+        ucs_assertv((ucp_ep_ext_control(ep)->ka_count /
+                             (worker->keepalive.round_count + 1)) <= 2,
+                    "ep %p: keepalive.round_count=%" PRIu64 " ep.ka_count=%"
+                    PRIu64, ep, worker->keepalive.round_count,
+                    ucp_ep_ext_control(ep)->ka_count);
+#endif
+
         ka_ep_count++;
         ucp_worker_keepalive_next_ep(worker);
-    } while (ka_ep_count < max_ka_ep_count);
+    }
 
     ucs_trace("worker %p: sent keepalive on %u endpoints", worker, ka_ep_count);
     worker->keepalive.last_round = now;
     worker->keepalive.ep_count   = 0;
+#if UCS_ENABLE_ASSERT
+    worker->keepalive.round_count++;
+#endif
 
 out:
     return ka_ep_count;
