@@ -946,10 +946,17 @@ ucs_status_t uct_dc_mlx5_ep_fc_ctrl(uct_ep_t *tl_ep, unsigned op,
         }
 
         uct_rc_mlx5_txqp_inline_post(&iface->super, UCT_IB_QPT_DCI,
-                                     txqp, txwq, MLX5_OPCODE_SEND,
+                                     txqp, txwq, MLX5_OPCODE_SEND_IMM,
                                      &dc_req->sender.payload.seq,
                                      sizeof(sender.payload.seq),
-                                     op, sender_ep, 0, 0, 0,
+                                     op, sender_ep, iface->rx.dct.qp_num, 0, 0,
+                                     &av, ah_attr.is_global ? mlx5_av_grh(&mlx5_av) : NULL,
+                                     uct_ib_mlx5_wqe_av_size(&av), 0, INT_MAX);
+        uct_rc_mlx5_txqp_inline_post(&iface->super, UCT_IB_QPT_DCI,
+                                     txqp, txwq, MLX5_OPCODE_SEND_IMM,
+                                     &dc_req->sender.payload.seq,
+                                     sizeof(sender.payload.seq),
+                                     op, sender_ep, iface->rx.dct.qp_num, 0, 0,
                                      &av, ah_attr.is_global ? mlx5_av_grh(&mlx5_av) : NULL,
                                      uct_ib_mlx5_wqe_av_size(&av), 0, INT_MAX);
     } else {
@@ -972,6 +979,8 @@ ucs_status_t uct_dc_mlx5_ep_fc_ctrl(uct_ep_t *tl_ep, unsigned op,
         UCS_STATS_UPDATE_COUNTER(dc_ep->fc.stats,
                                  UCT_RC_FC_STAT_TX_HARD_REQ, 1);
 
+        ucs_diag("uct_ep %p: really sent FC_HARD_REQ with %" PRIu64, dc_ep,
+                 sender.payload.seq);
         uct_rc_mlx5_txqp_inline_post(&iface->super, UCT_IB_QPT_DCI,
                                      txqp, txwq, MLX5_OPCODE_SEND_IMM,
                                      &sender.payload, sizeof(sender.payload),

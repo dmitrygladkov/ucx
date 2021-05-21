@@ -1082,7 +1082,7 @@ ucs_status_t uct_dc_mlx5_iface_fc_handler(uct_rc_iface_t *rc_iface, unsigned qp_
         dc_req->sender           = *((uct_dc_fc_sender_data_t*)(hdr + 1));
 
         status = uct_dc_mlx5_iface_fc_grant(&dc_req->super.super);
-        if (status == UCS_ERR_NO_RESOURCE){
+        if (status == UCS_ERR_NO_RESOURCE) {
             uct_dc_mlx5_ep_pending_common(iface, ep, &dc_req->super.super,
                                           0, 1);
         } else {
@@ -1113,7 +1113,8 @@ ucs_status_t uct_dc_mlx5_iface_fc_handler(uct_rc_iface_t *rc_iface, unsigned qp_
         ep      = (uct_dc_mlx5_ep_t *)sender->ep;
         cur_wnd = ep->fc.fc_wnd;
 
-        ucs_diag("uct_ep %p: received FC_PURE_GRANT", ep);
+        ucs_diag("uct_ep %p: received FC_PURE_GRANT with %" PRIu64, ep,
+                 sender->payload.seq);
         /* Peer granted resources, so update wnd */
         ep->fc.fc_wnd = rc_iface->config.fc_wnd_size;
 
