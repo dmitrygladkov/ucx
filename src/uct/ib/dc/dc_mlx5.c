@@ -1540,8 +1540,8 @@ void uct_dc_mlx5_iface_set_ep_failed(uct_dc_mlx5_iface_t *iface,
 
     if (ep == iface->tx.fc_ep) {
         /* Do not report errors on flow control endpoint */
-        ucs_debug("got error on DC flow-control endpoint, iface %p: %s", iface,
-                  ucs_status_string(ep_status));
+        ucs_diag("iface %p, ep %p: got error on DC flow-control endpoint: %s",
+                 iface, iface->tx.fc_ep, ucs_status_string(ep_status));
         return;
     }
 
