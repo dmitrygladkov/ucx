@@ -96,6 +96,11 @@ ucs_config_field_t uct_dc_mlx5_iface_config_sub_table[] = {
      "there are other endpoints waiting for it.",
      ucs_offsetof(uct_dc_mlx5_iface_config_t, quota), UCS_CONFIG_TYPE_UINT},
 
+    {"FC_HARD_REQ_TIMEOUT", "5s",
+     "Timeout for sending FC_HARD_REQ when FC window is empty (0 - disabled).",
+     ucs_offsetof(uct_dc_mlx5_iface_config_t, fc_hard_req_timeout),
+     UCS_CONFIG_TYPE_TIME},
+
     {NULL}
 };
 
@@ -1095,10 +1100,10 @@ ucs_status_t uct_dc_mlx5_iface_fc_handler(uct_rc_iface_t *rc_iface, unsigned qp_
 
         it = kh_get(uct_dc_mlx5_fc_hash, &iface->tx.fc_hash, sender->ep);
         if ((it == kh_end(&iface->tx.fc_hash)) ||
-            (kh_value(&iface->tx.fc_hash, it) != sender->payload.seq)) {
+            (kh_value(&iface->tx.fc_hash, it).seq != sender->payload.seq)) {
             if (it != kh_end(&iface->tx.fc_hash)) {
                 ucs_diag("FC_PURE_REQ_HANDLE: got %zu vs expected %zu for uct_ep %p",
-                         sender->payload.seq, kh_value(&iface->tx.fc_hash, it),
+                         sender->payload.seq, kh_value(&iface->tx.fc_hash, it).seq,
                          (void*)sender->ep);
             } else if (it == kh_end(&iface->tx.fc_hash)) {
                 ucs_diag("FC_PURE_REQ_HANDLE: can't find for uct_ep %p",
@@ -1118,7 +1123,7 @@ ucs_status_t uct_dc_mlx5_iface_fc_handler(uct_rc_iface_t *rc_iface, unsigned qp_
         /* Peer granted resources, so update wnd */
         ep->fc.fc_wnd = rc_iface->config.fc_wnd_size;
 
-        /* Remove entry for flush to complete  */
+        /* Remove entry for flush to complete */
         kh_del(uct_dc_mlx5_fc_hash, &iface->tx.fc_hash, it);
 
         UCS_STATS_UPDATE_COUNTER(ep->fc.stats, UCT_RC_FC_STAT_RX_PURE_GRANT, 1);
@@ -1303,6 +1308,10 @@ static UCS_CLASS_INIT_FUNC(uct_dc_mlx5_iface_t, uct_md_h tl_md, uct_worker_h wor
     self->tx.ndci                          = config->ndci;
     self->tx.policy                        = (uct_dc_tx_policy_t)config->tx_policy;
     self->tx.fc_seq                        = 0;
+    self->tx.fc_hard_req_timeout           = (config->fc_hard_req_timeout != 0) ?
+                                             ucs_time_from_sec(
+                                                     config->fc_hard_req_timeout) :
+                                             ULONG_MAX;
     self->keepalive_dci                    = -1;
     self->tx.num_dci_pools                 = 1;
     self->super.super.config.tx_moderation = 0; /* disable tx moderation for dcs */

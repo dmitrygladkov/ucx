@@ -13,6 +13,7 @@
 #include "dc_mlx5.h"
 
 #include <uct/ib/mlx5/ib_mlx5_log.h>
+#include <ucs/time/time.h>
 
 #define UCT_DC_MLX5_IFACE_TXQP_GET(_iface, _ep, _txqp, _txwq) \
     UCT_DC_MLX5_IFACE_TXQP_DCI_GET(_iface, (_ep)->dci, _txqp, _txwq)
@@ -889,6 +890,7 @@ ucs_status_t uct_dc_mlx5_ep_fc_ctrl(uct_ep_t *tl_ep, unsigned op,
                                                 uct_dc_mlx5_iface_t);
     uct_ib_iface_t *ib_iface   = &iface->super.super.super;
     struct ibv_ah_attr ah_attr = {.is_global = 0};
+    uct_dc_mlx5_ep_fc_entry_t *fc_entry;
     uct_dc_fc_sender_data_t sender;
     uct_dc_fc_request_t *dc_req;
     struct mlx5_wqe_av mlx5_av;
@@ -896,6 +898,7 @@ ucs_status_t uct_dc_mlx5_ep_fc_ctrl(uct_ep_t *tl_ep, unsigned op,
     ucs_status_t status;
     uintptr_t sender_ep;
     struct ibv_ah *ah;
+    ucs_time_t now;
     khiter_t it;
     int ret;
 
@@ -946,40 +949,51 @@ ucs_status_t uct_dc_mlx5_ep_fc_ctrl(uct_ep_t *tl_ep, unsigned op,
         }
 
         uct_rc_mlx5_txqp_inline_post(&iface->super, UCT_IB_QPT_DCI,
-                                     txqp, txwq, MLX5_OPCODE_SEND_IMM,
+                                     txqp, txwq, MLX5_OPCODE_SEND,
                                      &dc_req->sender.payload.seq,
                                      sizeof(sender.payload.seq),
-                                     op, sender_ep, iface->rx.dct.qp_num, 0, 0,
-                                     &av, ah_attr.is_global ? mlx5_av_grh(&mlx5_av) : NULL,
-                                     uct_ib_mlx5_wqe_av_size(&av), 0, INT_MAX);
-        uct_rc_mlx5_txqp_inline_post(&iface->super, UCT_IB_QPT_DCI,
-                                     txqp, txwq, MLX5_OPCODE_SEND_IMM,
-                                     &dc_req->sender.payload.seq,
-                                     sizeof(sender.payload.seq),
-                                     op, sender_ep, iface->rx.dct.qp_num, 0, 0,
+                                     op, sender_ep, 0, 0, 0,
                                      &av, ah_attr.is_global ? mlx5_av_grh(&mlx5_av) : NULL,
                                      uct_ib_mlx5_wqe_av_size(&av), 0, INT_MAX);
     } else {
         ucs_assert(op == UCT_RC_EP_FLAG_FC_HARD_REQ);
 
-        it = kh_put(uct_dc_mlx5_fc_hash, &iface->tx.fc_hash, (uint64_t)dc_ep, &ret);
-        if (ret == UCS_KH_PUT_KEY_PRESENT) {
-            return UCS_OK;
-        } else if (ret == UCS_KH_PUT_FAILED) {
-            ucs_error("failed to create hash entry for fc hard req");
-            return UCS_ERR_NO_MEMORY;
+        now = ucs_get_time();
+        it  = kh_get(uct_dc_mlx5_fc_hash, &iface->tx.fc_hash, (uint64_t)dc_ep);
+        if (it == kh_end(&iface->tx.fc_hash)) {
+            ucs_assert(dc_ep->fc.fc_wnd ==
+                               iface->super.super.config.fc_hard_thresh);
+
+            it = kh_put(uct_dc_mlx5_fc_hash, &iface->tx.fc_hash,
+                        (uint64_t)dc_ep, &ret);
+            if (ucs_unlikely(ret == UCS_KH_PUT_FAILED)) {
+                ucs_error("failed to create hash entry for fc hard req");
+                return UCS_ERR_NO_MEMORY;
+            }
+
+            ucs_assert(ret != UCS_KH_PUT_KEY_PRESENT);
+            fc_entry = &kh_value(&iface->tx.fc_hash, it);
+        } else {
+            fc_entry = &kh_value(&iface->tx.fc_hash, it);
+            if (ucs_likely((now - fc_entry->last_time) <
+                                   iface->tx.fc_hard_req_timeout) ||
+                (dc_ep->fc.fc_wnd > 0)) {
+                return UCS_OK;
+            }
         }
 
-        sender.ep                        = (uint64_t)dc_ep;
-        sender.payload.seq               = iface->tx.fc_seq++;
-        sender.payload.gid               = ib_iface->gid_info.gid;
-        sender.payload.is_global         = dc_ep->flags & UCT_DC_MLX5_EP_FLAG_GRH;
-        kh_value(&iface->tx.fc_hash, it) = sender.payload.seq;
+        sender.ep                = (uint64_t)dc_ep;
+        sender.payload.seq       = iface->tx.fc_seq++;
+        sender.payload.gid       = ib_iface->gid_info.gid;
+        sender.payload.is_global = dc_ep->flags & UCT_DC_MLX5_EP_FLAG_GRH;
+
+        fc_entry->seq       = sender.payload.seq;
+        fc_entry->last_time = now;
 
         UCS_STATS_UPDATE_COUNTER(dc_ep->fc.stats,
                                  UCT_RC_FC_STAT_TX_HARD_REQ, 1);
 
-        ucs_diag("uct_ep %p: really sent FC_HARD_REQ with %" PRIu64, dc_ep,
+        ucs_diag("uct_ep %p: sent FC_HARD_REQ with %" PRIu64, dc_ep,
                  sender.payload.seq);
         uct_rc_mlx5_txqp_inline_post(&iface->super, UCT_IB_QPT_DCI,
                                      txqp, txwq, MLX5_OPCODE_SEND_IMM,
@@ -1352,14 +1366,22 @@ void uct_dc_mlx5_ep_pending_purge(uct_ep_h tl_ep, uct_pending_purge_callback_t c
     }
 }
 
-ucs_status_t uct_dc_mlx5_ep_check_fc(uct_dc_mlx5_iface_t *iface, uct_dc_mlx5_ep_t *ep)
+ucs_status_t uct_dc_mlx5_ep_check_fc(uct_dc_mlx5_iface_t *iface,
+                                     uct_dc_mlx5_ep_t *ep)
 {
+    ucs_status_t ret_status = UCS_OK;
     ucs_status_t status;
 
     if (iface->super.super.config.fc_enabled) {
-        UCT_RC_CHECK_FC_WND(&ep->fc, ep->super.stats);
-        if (ep->fc.fc_wnd == iface->super.super.config.fc_hard_thresh) {
-            ucs_diag("uct_ep %p: sent FC_HARD_REQ", ep);
+        if (ucs_unlikely((ep->fc.fc_wnd ==
+                          iface->super.super.config.fc_hard_thresh) ||
+                         (ep->fc.fc_wnd <= 0))) {
+            if (ep->fc.fc_wnd <= 0) {
+                UCS_STATS_UPDATE_COUNTER(ep->fc.stats, UCT_RC_FC_STAT_NO_CRED, 1);
+                UCS_STATS_UPDATE_COUNTER(ep->super.stats, UCT_EP_STAT_NO_RES, 1);
+                ret_status = UCS_ERR_NO_RESOURCE;
+            }
+
             status = uct_rc_fc_ctrl(&ep->super.super,
                                     UCT_RC_EP_FLAG_FC_HARD_REQ,
                                     NULL);
@@ -1371,7 +1393,8 @@ ucs_status_t uct_dc_mlx5_ep_check_fc(uct_dc_mlx5_iface_t *iface, uct_dc_mlx5_ep_
         /* Set fc_wnd to max, to send as much as possible without checks */
         ep->fc.fc_wnd = INT16_MAX;
     }
-    return UCS_OK;
+
+    return ret_status;
 }
 
 void uct_dc_mlx5_ep_handle_failure(uct_dc_mlx5_ep_t *ep, void *arg,

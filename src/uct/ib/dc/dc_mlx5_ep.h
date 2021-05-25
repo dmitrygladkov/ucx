@@ -594,10 +594,15 @@ static inline struct mlx5_grh_av *uct_dc_mlx5_ep_get_grh(uct_dc_mlx5_ep_t *ep)
             if (ucs_unlikely(_status != UCS_OK)) { \
                 if (((_ep)->dci != UCT_DC_MLX5_EP_NO_DCI) && \
                     !uct_dc_mlx5_iface_is_dci_rand(_iface)) { \
-                    ucs_assertv_always(uct_dc_mlx5_iface_dci_has_outstanding(_iface, \
-                                                                             (_ep)->dci), \
-                                       "iface (%p) ep (%p) dci leak detected: dci=%d", \
-                                       _iface, _ep, (_ep)->dci); \
+                    /* Allow owning DCI if FC window is empty and EP sends \
+                     * FC_HARD_REQ or EP has outstanding operations */ \
+                    ucs_assertv_always(((_ep)->fc.fc_wnd <= 0) || \
+                                       uct_dc_mlx5_iface_dci_has_outstanding( \
+                                               _iface, (_ep)->dci), \
+                                       "iface (%p) ep (%p) dci leak detected:" \
+                                       " dci=%d fc_wnd=%d", \
+                                       _iface, _ep, (_ep)->dci, \
+                                       (_ep)->fc.fc_wnd); \
                 } \
                 return _status; \
             } \
