@@ -389,6 +389,8 @@ typedef struct uct_tcp_iface {
         struct sockaddr_in        ifaddr;            /* Network address */
         struct sockaddr_in        netmask;           /* Network address mask */
         int                       prefer_default;    /* Prefer default gateway */
+        int                       reachable_check;   /* Indicates if reachability of peers should be
+                                                      * checked by applying netmask to IP address */
         int                       put_enable;        /* Enable PUT Zcopy operation support */
         int                       conn_nb;           /* Use non-blocking connect() */
         unsigned                  max_poll;          /* Number of events to poll per socket*/
@@ -428,6 +430,7 @@ typedef struct uct_tcp_iface_config {
     size_t                         max_iov;
     size_t                         sendv_thresh;
     int                            prefer_default;
+    int                            reachable_check;
     int                            put_enable;
     int                            conn_nb;
     unsigned                       max_poll;

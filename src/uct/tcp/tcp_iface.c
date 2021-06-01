@@ -48,6 +48,10 @@ static ucs_config_field_t uct_tcp_iface_config_table[] = {
    "Give higher priority to the default network interface on the host",
    ucs_offsetof(uct_tcp_iface_config_t, prefer_default), UCS_CONFIG_TYPE_BOOL},
 
+  {"REACHABLE_CHECK", "y",
+   "Check reachability of peers by applying netmask to IP address",
+   ucs_offsetof(uct_tcp_iface_config_t, reachable_check), UCS_CONFIG_TYPE_BOOL},
+
   {"PUT_ENABLE", "y",
    "Enable PUT Zcopy support",
    ucs_offsetof(uct_tcp_iface_config_t, put_enable), UCS_CONFIG_TYPE_BOOL},
@@ -175,18 +179,27 @@ static int uct_tcp_iface_is_reachable(const uct_iface_h tl_iface,
                                       const uct_device_addr_t *dev_addr,
                                       const uct_iface_addr_t *iface_addr)
 {
+    uct_tcp_iface_t *iface              = ucs_derived_of(tl_iface,
+                                                         uct_tcp_iface_t);
     uct_tcp_device_addr_t *tcp_dev_addr = (uct_tcp_device_addr_t*)dev_addr;
+    const in_addr_t *remote_inaddr      = (const in_addr_t*)(tcp_dev_addr + 1);
+    in_addr_t netmask                   = iface->config.netmask.sin_addr.s_addr;
     uct_iface_local_addr_ns_t *local_addr_ns;
 
     if (tcp_dev_addr->flags & UCT_TCP_DEVICE_ADDR_FLAG_LOOPBACK) {
+        if (!ucs_sockaddr_is_inaddr_loopback(
+                     (const struct sockaddr*)&iface->config.ifaddr)) {
+            return 0;
+        }
+
         local_addr_ns = (uct_iface_local_addr_ns_t*)(tcp_dev_addr + 1);
         return uct_iface_local_is_reachable(local_addr_ns,
                                             UCS_SYS_NS_TYPE_NET);
     }
 
-    /* We always report that a peer is reachable. connect() call will
-     * fail if the peer is unreachable when creating UCT/TCP EP */
-    return 1;
+    return !iface->config.reachable_check ||
+           ((*remote_inaddr & netmask) ==
+                    (iface->config.ifaddr.sin_addr.s_addr & netmask));
 }
 
 static ucs_status_t uct_tcp_iface_query(uct_iface_h tl_iface,
@@ -627,6 +640,7 @@ static UCS_CLASS_INIT_FUNC(uct_tcp_iface_t, uct_md_h md, uct_worker_h worker,
     self->config.zcopy.max_hdr     = self->config.tx_seg_size -
                                      self->config.zcopy.hdr_offset;
     self->config.prefer_default    = config->prefer_default;
+    self->config.reachable_check   = config->reachable_check;
     self->config.put_enable        = config->put_enable;
     self->config.conn_nb           = config->conn_nb;
     self->config.max_poll          = config->max_poll;
