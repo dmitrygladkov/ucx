@@ -147,6 +147,8 @@ ucs_status_t ucp_ep_create_base(ucp_worker_h worker, const char *peer_name,
     ucp_lane_index_t lane;
     ucs_status_t status;
     ucp_ep_h ep;
+    ucp_ep_ext_gen_t *ep_ext_gen;
+    ucp_ep_ext_control_t *ep_ext_control;
 
     ep = ucs_strided_alloc_get(&worker->ep_alloc, "ucp_ep");
     if (ep == NULL) {
@@ -155,40 +157,40 @@ ucs_status_t ucp_ep_create_base(ucp_worker_h worker, const char *peer_name,
         goto err;
     }
 
-    ucp_ep_ext_gen(ep)->control_ext = ucs_calloc(1,
-                                                 sizeof(ucp_ep_ext_control_t),
-                                                 "ep_control_ext");
-    if (ucp_ep_ext_gen(ep)->control_ext == NULL) {
+    ep_ext_gen     = ucp_ep_ext_gen(ep);
+    ep_ext_control = ucs_calloc(1, sizeof(ucp_ep_ext_control_t),
+                                "ep_control_ext");
+    if (ep_ext_control == NULL) {
         ucs_error("Failed to allocate ep control extension");
         status = UCS_ERR_NO_MEMORY;
         goto err_free_ep;
     }
 
-    ep->refcount                          = 1;
-    ep->cfg_index                         = UCP_WORKER_CFG_INDEX_NULL;
-    ep->worker                            = worker;
-    ep->am_lane                           = UCP_NULL_LANE;
-    ep->flags                             = 0;
-    ep->conn_sn                           = UCP_EP_MATCH_CONN_SN_MAX;
+    ep->refcount                        = 1;
+    ep->cfg_index                       = UCP_WORKER_CFG_INDEX_NULL;
+    ep->worker                          = worker;
+    ep->am_lane                         = UCP_NULL_LANE;
+    ep->flags                           = 0;
+    ep->conn_sn                         = UCP_EP_MATCH_CONN_SN_MAX;
 #if UCS_ENABLE_ASSERT
-    ep->flush_iter_refcount               = 0;
-    ep->discard_refcount                  = 0;
+    ep->flush_iter_refcount             = 0;
+    ep->discard_refcount                = 0;
 #endif
-    ucp_ep_ext_gen(ep)->user_data         = NULL;
-    ucp_ep_ext_control(ep)->cm_idx        = UCP_NULL_RESOURCE;
-    ucp_ep_ext_control(ep)->err_cb        = NULL;
-    ucp_ep_ext_control(ep)->local_ep_id   = UCS_PTR_MAP_KEY_INVALID;
-    ucp_ep_ext_control(ep)->remote_ep_id  = UCS_PTR_MAP_KEY_INVALID;
+    ep_ext_gen->control_ext             = ep_ext_control;
+    ep_ext_gen->user_data               = NULL;
+    ep_ext_control->cm_idx              = UCP_NULL_RESOURCE;
+    ep_ext_control->err_cb              = NULL;
+    ep_ext_control->local_ep_id         = UCS_PTR_MAP_KEY_INVALID;
+    ep_ext_control->remote_ep_id        = UCS_PTR_MAP_KEY_INVALID;
 #if UCS_ENABLE_ASSERT
-    ucp_ep_ext_control(ep)->ka_last_round = 0;
+    ep_ext_control->ka_last_round_count = SIZE_MAX;
 #endif
 
-    UCS_STATIC_ASSERT(sizeof(ucp_ep_ext_gen(ep)->ep_match) >=
-                      sizeof(ucp_ep_ext_gen(ep)->flush_state));
-    memset(&ucp_ep_ext_gen(ep)->ep_match, 0,
-           sizeof(ucp_ep_ext_gen(ep)->ep_match));
+    UCS_STATIC_ASSERT(sizeof(ep_ext_gen->ep_match) >=
+                              sizeof(ep_ext_gen->flush_state));
+    memset(&ep_ext_gen->ep_match, 0, sizeof(ep_ext_gen->ep_match));
 
-    ucs_hlist_head_init(&ucp_ep_ext_gen(ep)->proto_reqs);
+    ucs_hlist_head_init(&ep_ext_gen->proto_reqs);
     ucp_stream_ep_init(ep);
     ucp_am_ep_init(ep);
 
@@ -2754,7 +2756,7 @@ ucs_status_t ucp_ep_do_uct_ep_keepalive(ucp_ep_h ucp_ep, uct_ep_h uct_ep,
     return (packed_len > 0) ? UCS_OK : (ucs_status_t)packed_len;
 }
 
-int ucp_ep_do_keepalive(ucp_ep_h ep, ucs_time_t now)
+int ucp_ep_do_keepalive(ucp_ep_h ep)
 {
     ucp_worker_h worker = ep->worker;
     ucp_lane_index_t lane;
@@ -2792,13 +2794,13 @@ int ucp_ep_do_keepalive(ucp_ep_h ep, ucs_time_t now)
     }
 
 #if UCS_ENABLE_ASSERT
-    ucs_assertv((now - ucp_ep_ext_control(ep)->ka_last_round) >=
-                        worker->context->config.ext.keepalive_interval,
-                "ep %p: now=%" PRIu64 " ka_last_round=%" PRIu64
-                " ka_interval=%" PRIu64,
-                ep, now, ucp_ep_ext_control(ep)->ka_last_round,
-                worker->context->config.ext.keepalive_interval);
-    ucp_ep_ext_control(ep)->ka_last_round = now;
+    ucs_assertv(worker->keepalive.round_count !=
+                        ucp_ep_ext_control(ep)->ka_last_round_count,
+                "worker %p: ka_round_count=%" PRIu64
+                " ep %p: ka_last_round=%" PRIu64,
+                worker, worker->keepalive.round_count, ep,
+                ucp_ep_ext_control(ep)->ka_last_round_count);
+    ucp_ep_ext_control(ep)->ka_last_round_count = worker->keepalive.round_count;
 #endif
 
     return 1;

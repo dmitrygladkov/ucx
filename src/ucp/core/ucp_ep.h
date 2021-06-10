@@ -433,7 +433,9 @@ typedef struct {
     ucp_err_handler_cb_t     err_cb; /* Error handler */
     ucp_ep_close_proto_req_t close_req; /* Close protocol request */
 #if UCS_ENABLE_ASSERT
-    ucs_time_t               ka_last_round; /* Time of last KA round done */
+    size_t                   ka_last_round_count; /* Last keepalive round number
+                                                   * in which the endpoint
+                                                   * participated */
 #endif
 } ucp_ep_ext_control_t;
 
@@ -671,11 +673,10 @@ ucs_status_t ucp_ep_do_uct_ep_keepalive(ucp_ep_h ucp_ep, uct_ep_h uct_ep,
  * @brief Do keepalive operation.
  *
  * @param [in] ep    UCP Endpoint object to operate keepalive.
- * @param [in] now   Current time when keepalive started.
  *
  * @return Indication whether keepalive was fully done for UCP Endpoint or not.
  */
-int ucp_ep_do_keepalive(ucp_ep_h ep, ucs_time_t now);
+int ucp_ep_do_keepalive(ucp_ep_h ep);
 
 /**
  * @brief Purge flush and protocol requests scheduled on a given UCP endpoint.

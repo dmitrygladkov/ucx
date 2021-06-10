@@ -2988,7 +2988,7 @@ ucp_worker_do_keepalive_progress(ucp_worker_h worker)
 
         ucs_trace_func("worker %p: do keepalive on ep %p lane_map 0x%x", worker,
                        ep, worker->keepalive.lane_map);
-        if (!ucp_ep_do_keepalive(ep, now)) {
+        if (!ucp_ep_do_keepalive(ep)) {
             /* In case if EP has no resources to send keepalive message
              * then just return without update of last_round timestamp,
              * on next progress iteration we will continue from this point */
