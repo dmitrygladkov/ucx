@@ -335,30 +335,6 @@ UCS_TEST_SKIP_COND_P(test_uct_peer_failure, two_pairs_send,
 }
 
 
-UCS_TEST_SKIP_COND_P(test_uct_peer_failure, two_pairs_send_after,
-                     !check_caps(m_required_caps))
-{
-    set_am_handlers();
-
-    {
-        scoped_log_handler slh(wrap_errors_logger);
-        kill_receiver();
-        for (int i = 0; (i < 100) && (m_err_count == 0); ++i) {
-            send_am(0);
-        }
-        flush();
-    }
-
-    wait_for_value(&m_err_count, size_t(1), true);
-    m_am_count = 0;
-    send_am(1);
-    ucs_debug("flushing");
-    flush_ep(1);
-    ucs_debug("flushed");
-    wait_for_flag(&m_am_count);
-    EXPECT_EQ(m_am_count, 1ul);
-}
-
 UCT_INSTANTIATE_TEST_CASE(test_uct_peer_failure)
 
 class test_uct_peer_failure_multiple : public test_uct_peer_failure
