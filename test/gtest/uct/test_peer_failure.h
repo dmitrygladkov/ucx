@@ -59,6 +59,7 @@ public:
     void kill_receiver();
     void new_receiver();
     void set_am_handlers();
+    ucs_status_t ep_check(int index);
     ucs_status_t send_am(int index);
     void send_recv_am(int index, ucs_status_t exp_status = UCS_OK);
     ucs_status_t flush_ep(size_t index, ucs_time_t deadline = ULONG_MAX);

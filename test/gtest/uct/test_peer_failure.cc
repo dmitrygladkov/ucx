@@ -137,6 +137,16 @@ void test_uct_peer_failure::set_am_handlers()
                   am_handler_setter(this));
 }
 
+ucs_status_t test_uct_peer_failure::ep_check(int index)
+{
+    ucs_status_t status;
+    while ((status = uct_ep_check(m_sender->ep(index), 0, NULL)) ==
+           UCS_ERR_NO_RESOURCE) {
+        progress();
+    };
+    return status;
+}
+
 ucs_status_t test_uct_peer_failure::send_am(int index)
 {
     ucs_status_t status;
@@ -429,7 +439,7 @@ UCS_TEST_SKIP_COND_P(test_uct_peer_failure_multiple, test,
         for (size_t idx = 0; (idx < m_nreceivers - 1) &&
                              (m_err_count == 0); ++idx) {
             for (size_t i = 0; i < m_tx_window; ++i) {
-                if (UCS_STATUS_IS_ERR(send_am(idx))) {
+                if (UCS_STATUS_IS_ERR(ep_check(idx))) {
                     break;
                 }
             }
