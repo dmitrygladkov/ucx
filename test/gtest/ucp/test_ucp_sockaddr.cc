@@ -190,11 +190,12 @@ public:
                     continue;
                 }
 
-                saddrs.push_back(ucs::sock_addr_storage(
-                        ucs::is_rdmacm_netdev(ifa->ifa_name)));
+                saddrs.push_back(ucs::sock_addr_storage());
                 status = ucs_sockaddr_sizeof(ifa->ifa_addr, &size);
                 ASSERT_UCS_OK(status);
-                saddrs.back().set_sock_addr(*ifa->ifa_addr, size);
+                saddrs.back().set_sock_addr(*ifa->ifa_addr, size,
+                                            ucs::is_rdmacm_netdev(
+                                                    ifa->ifa_name));
                 saddrs.back().set_port(0); /* listen on any port then update */
             }
         }
@@ -1219,6 +1220,51 @@ UCS_TEST_P(test_ucp_sockaddr_cm_private_data,
 }
 
 UCP_INSTANTIATE_TEST_CASE_TLS(test_ucp_sockaddr_cm_private_data, all, "all")
+
+
+class test_ucp_sockaddr_check_lanes : public test_ucp_sockaddr {
+    unsigned rndv_lanes_num(ucp_ep_h ep)
+    {
+        unsigned num               = 0;
+        ucp_ep_config_t *ep_config = ucp_ep_config(ep);
+
+        for (ucp_lane_index_t lane_idx = 0; lane_idx < UCP_MAX_LANES;
+             ++lane_idx) {
+            if (ep_config->key.rma_bw_lanes[lane_idx] != UCP_NULL_LANE) {
+                num++;
+            }
+        }
+
+        return num;
+    }
+
+protected:
+    void check_rndv_lanes(ucp_ep_h ep)
+    {
+        for (ucp_lane_index_t lane_idx = 0;
+             lane_idx < ucp_ep_num_lanes(ep); ++lane_idx) {
+            if ((lane_idx != ucp_ep_get_cm_lane(ep)) && 
+                ucp_ep_get_iface_attr(ep, lane_idx)->cap.flags &
+                        (UCT_IFACE_FLAG_GET_ZCOPY | UCT_IFACE_FLAG_PUT_ZCOPY)) {
+                EXPECT_GT(rndv_lanes_num(ep), 0);
+                break;
+            }
+        }
+    }
+};
+
+
+UCS_TEST_P(test_ucp_sockaddr_check_lanes, check_rndv_lanes)
+{
+    listen_and_communicate(false, SEND_DIRECTION_BIDI);
+
+    check_rndv_lanes(sender().ep());
+    check_rndv_lanes(receiver().ep());
+
+    concurrent_disconnect(UCP_EP_CLOSE_MODE_FLUSH);
+}
+
+UCP_INSTANTIATE_ALL_TEST_CASE(test_ucp_sockaddr_check_lanes)
 
 
 class test_ucp_sockaddr_destroy_ep_on_err : public test_ucp_sockaddr {

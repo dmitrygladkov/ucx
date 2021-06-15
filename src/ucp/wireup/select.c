@@ -294,6 +294,7 @@ static UCS_F_NOINLINE ucs_status_t ucp_wireup_select_transport(
     ucp_wireup_select_info_t sinfo        = {0};
     int found                             = 0;
     uint64_t local_iface_flags            = criteria->local_iface_flags;
+    uint64_t local_md_flags;
     uint64_t addr_index_map, rsc_addr_index_map;
     const ucp_wireup_lane_desc_t *lane_desc;
     unsigned addr_index;
@@ -396,9 +397,20 @@ static UCS_F_NOINLINE ucs_status_t ucp_wireup_select_transport(
             local_iface_flags |= UCT_IFACE_FLAG_CONNECT_TO_IFACE;
         }
 
+        local_md_flags = criteria->local_md_flags;
+        if (!(iface_attr->cap.flags & UCT_IFACE_FLAG_CONNECT_TO_IFACE) ||
+            /* If the transport has both CONNECT_TO_IFACE and CONNECT_TO_EP, and
+             * connecting via CM, UCP prefers CONNECT_TO_EP */
+            ((iface_attr->cap.flags & UCT_IFACE_FLAG_CONNECT_TO_EP) &&
+             (ucp_ep_init_flags_has_cm(select_params->ep_init_flags)))) {
+            /* Remove INVALIDATE md flag in case of transport uses CONNECT_TO_EP
+             * connection mode */
+            local_md_flags &= ~UCT_MD_FLAG_INVALIDATE;
+        }
+
         /* Check that local md and interface satisfy the criteria */
         if (!ucp_wireup_check_flags(resource, md_attr->cap.flags,
-                                    criteria->local_md_flags, criteria->title,
+                                    local_md_flags, criteria->title,
                                     ucp_wireup_md_flags, p, endp - p) ||
             !ucp_wireup_check_flags(resource, iface_attr->cap.flags,
                                     local_iface_flags, criteria->title,
@@ -859,7 +871,7 @@ ucp_wireup_add_rma_lanes(const ucp_wireup_select_params_t *select_params,
 
     if ((!(ucp_ep_get_context_features(select_params->ep) & UCP_FEATURE_RMA) &&
          !(ep_init_flags & UCP_EP_INIT_FLAG_MEM_TYPE)) ||
-        (ep_init_flags & UCP_EP_INIT_CM_PHASE)) {
+        (ep_init_flags & UCP_EP_INIT_CREATE_AM_LANE_ONLY)) {
         return UCS_OK;
     }
 
@@ -910,7 +922,8 @@ ucp_wireup_add_amo_lanes(const ucp_wireup_select_params_t *select_params,
 
     if (!ucs_test_flags(context->config.features, UCP_FEATURE_AMO32,
                         UCP_FEATURE_AMO64) ||
-        (ep_init_flags & (UCP_EP_INIT_FLAG_MEM_TYPE | UCP_EP_INIT_CM_PHASE))) {
+        (ep_init_flags & (UCP_EP_INIT_FLAG_MEM_TYPE |
+                          UCP_EP_INIT_CREATE_AM_LANE_ONLY))) {
         return UCS_OK;
     }
 
@@ -1187,7 +1200,8 @@ ucp_wireup_add_am_bw_lanes(const ucp_wireup_select_params_t *select_params,
     /* Check if we need active message BW lanes */
     if (!(ucp_ep_get_context_features(ep) &
           (UCP_FEATURE_TAG | UCP_FEATURE_AM)) ||
-        (ep_init_flags & (UCP_EP_INIT_FLAG_MEM_TYPE | UCP_EP_INIT_CM_PHASE)) ||
+        (ep_init_flags & (UCP_EP_INIT_FLAG_MEM_TYPE |
+                          UCP_EP_INIT_CREATE_AM_LANE_ONLY)) ||
         (context->config.ext.max_eager_lanes < 2)) {
         return UCS_OK;
     }
@@ -1271,7 +1285,7 @@ ucp_wireup_add_rma_bw_lanes(const ucp_wireup_select_params_t *select_params,
     ucp_tl_bitmap_t tl_bitmap;
     uint8_t i;
 
-    if (ep_init_flags & UCP_EP_INIT_CM_PHASE) {
+    if (ep_init_flags & UCP_EP_INIT_CREATE_AM_LANE_ONLY) {
         return UCS_OK;
     }
 
@@ -1400,7 +1414,8 @@ ucp_wireup_add_tag_lane(const ucp_wireup_select_params_t *select_params,
     ucs_status_t status;
 
     if (!(ucp_ep_get_context_features(ep) & UCP_FEATURE_TAG) ||
-        (ep_init_flags & (UCP_EP_INIT_FLAG_MEM_TYPE | UCP_EP_INIT_CM_PHASE)) ||
+        (ep_init_flags & (UCP_EP_INIT_FLAG_MEM_TYPE |
+                          UCP_EP_INIT_CREATE_AM_LANE_ONLY)) ||
         /* TODO: remove check below when UCP_ERR_HANDLING_MODE_PEER supports
          *       RNDV-protocol or HW TM supports fragmented protocols
          */
@@ -1797,8 +1812,11 @@ out:
     ucp_wireup_construct_lanes(&select_params, &select_ctx, addr_indices, key);
 
     /* Only two lanes must be created during CM phase (CM lane and TL lane) of
-     * connection setup between two peers */
-    ucs_assert(!(ep_init_flags & UCP_EP_INIT_CM_PHASE) || key->num_lanes == 2);
+     * connection setup between two peers, when AM lane only requested */
+    ucs_assert(!ucs_test_all_flags(ep_init_flags,
+                                   UCP_EP_INIT_CREATE_AM_LANE_ONLY |
+                                   UCP_EP_INIT_CM_PHASE) ||
+               (key->num_lanes == 2));
 
     return UCS_OK;
 }

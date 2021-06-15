@@ -308,7 +308,10 @@ static ucp_md_map_t ucp_request_get_invalidation_map(ucp_request_t *req)
         lane      = key->rma_bw_lanes[i];
         cap_flags = ucp_ep_get_iface_attr(ep, lane)->cap.flags;
 
-        if (cap_flags & UCT_IFACE_FLAG_CONNECT_TO_IFACE) {
+        if ((cap_flags & UCT_IFACE_FLAG_CONNECT_TO_IFACE) &&
+            /* CONNECT_TO_EP is prefferend connection mode in case of CM used */
+            (!ucp_ep_has_cm_lane(ep) ||
+             !(cap_flags & UCT_IFACE_FLAG_CONNECT_TO_EP))) {
             ucs_assert(cap_flags & UCT_IFACE_FLAG_GET_ZCOPY);
             ucs_assert(ucp_ep_md_attr(ep, lane)->cap.flags &
                        UCT_MD_FLAG_INVALIDATE);
