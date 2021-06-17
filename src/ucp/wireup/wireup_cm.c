@@ -1344,6 +1344,26 @@ err:
     return status;
 }
 
+static int
+ucp_cm_connect_progress_remove_filter(const ucs_callbackq_elem_t *elem,
+                                      void *arg)
+{
+    ucp_cm_client_connect_progress_arg_t *client_connect_arg;
+
+    if (elem->cb == ucp_cm_client_connect_progress) {
+        client_connect_arg = elem->arg;
+        if (client_connect_arg->ucp_ep == arg) {
+            ucp_cm_client_connect_prog_arg_free(client_connect_arg);
+            return 1;
+        }
+    } else if ((elem->cb == ucp_cm_server_conn_notify_progress) &&
+               (elem->arg == arg)) {
+        return 1;
+    }
+
+    return 0;
+}
+
 void ucp_ep_cm_disconnect_cm_lane(ucp_ep_h ucp_ep)
 {
     uct_ep_h uct_cm_ep = ucp_ep_get_cm_uct_ep(ucp_ep);
@@ -1358,7 +1378,14 @@ void ucp_ep_cm_disconnect_cm_lane(ucp_ep_h ucp_ep)
     ucp_ep_update_flags(ucp_ep, UCP_EP_FLAG_DISCONNECTED_CM_LANE,
                         UCP_EP_FLAG_LOCAL_CONNECTED);
 
-    /* this will invoke @ref ucp_cm_disconnect_cb on remote side */
+    /* Remove the client's connect_progress or the server's connect notify
+     * callbacks from the callbackq to make sure it won't be invoked after
+     * CM lane has already been disconnected */
+    ucs_callbackq_remove_if(&ucp_ep->worker->uct->progress_q,
+                            ucp_cm_connect_progress_remove_filter,
+                            ucp_ep);
+
+    /* This will invoke @ref ucp_cm_disconnect_cb on remote side */
     status = uct_ep_disconnect(uct_cm_ep, 0);
     if (status != UCS_OK) {
         ucs_diag("failed to disconnect CM lane %p of ep %p, %s", ucp_ep,
@@ -1387,23 +1414,14 @@ ucp_request_t* ucp_ep_cm_close_request_get(ucp_ep_h ep, const ucp_request_param_
 
 static int ucp_cm_cbs_remove_filter(const ucs_callbackq_elem_t *elem, void *arg)
 {
-    ucp_cm_client_connect_progress_arg_t *client_connect_arg;
-
-    if (elem->cb == ucp_cm_client_connect_progress) {
-        client_connect_arg = elem->arg;
-        if (client_connect_arg->ucp_ep == arg) {
-            ucp_cm_client_connect_prog_arg_free(client_connect_arg);
-            return 1;
-        } else {
-            return 0;
-        }
-    } else if ((elem->cb == ucp_ep_cm_disconnect_progress)      ||
-               (elem->cb == ucp_cm_server_conn_notify_progress) ||
+    if (ucp_cm_connect_progress_remove_filter(elem, arg)) {
+        return 1;
+    } else if ((elem->cb == ucp_ep_cm_disconnect_progress) ||
                (elem->cb == ucp_cm_client_uct_connect_progress)) {
         return arg == elem->arg;
-    } else {
-        return 0;
     }
+
+    return 0;
 }
 
 void ucp_ep_cm_slow_cbq_cleanup(ucp_ep_h ep)
