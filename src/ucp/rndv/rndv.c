@@ -507,14 +507,16 @@ ucp_rndv_progress_rma_zcopy_common(ucp_request_t *req, ucp_lane_index_t lane,
         }
 
         ucp_request_send_state_advance(req, &state, proto, status);
-        if (req->send.state.dt.offset == req->send.length) {
-            if (req->send.state.uct_comp.count == 0) {
-                uct_completion_update_status(&req->send.state.uct_comp, status);
-                req->send.state.uct_comp.func(&req->send.state.uct_comp);
+        if (ucs_likely(!UCS_STATUS_IS_ERR(status))) {
+            if (req->send.state.dt.offset == req->send.length) {
+                if (req->send.state.uct_comp.count == 0) {
+                    req->send.state.uct_comp.func(&req->send.state.uct_comp);
+                }
+                return UCS_OK;
             }
-            return UCS_OK;
-        } else if (!UCS_STATUS_IS_ERR(status)) {
-            /* return in_progress status in case if not all chunks are transmitted */
+
+            /* Return in_progress status in case if not all chunks are
+             * transmitted */
             ucp_rndv_zcopy_next_lane(req);
             return UCS_INPROGRESS;
         } else if (status == UCS_ERR_NO_RESOURCE) {
@@ -577,6 +579,10 @@ UCS_PROFILE_FUNC_VOID(ucp_rndv_get_completion, (self), uct_completion_t *self)
         return;
     }
 
+    ucs_assertv(rndv_req->send.state.uct_comp.count == 0,
+                "rndv_req %p: comp_count=%u",
+                rndv_req, rndv_req->send.state.uct_comp.count);
+
     rreq   = ucp_request_get_super(rndv_req);
     status = rndv_req->send.state.uct_comp.status;
     ep     = rndv_req->send.ep;
@@ -590,6 +596,7 @@ UCS_PROFILE_FUNC_VOID(ucp_rndv_get_completion, (self), uct_completion_t *self)
     UCS_PROFILE_REQUEST_EVENT(rreq, "complete_rndv_get", 0);
 
     ucp_rkey_destroy(rndv_req->send.rndv.rkey);
+    rndv_req->send.rndv.rkey = NULL;
     ucp_request_send_buffer_dereg(rndv_req);
 
     if (status == UCS_OK) {

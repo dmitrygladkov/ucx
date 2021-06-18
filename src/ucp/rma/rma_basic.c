@@ -113,10 +113,8 @@ static ucs_status_t ucp_rma_basic_progress_get(uct_pending_req_t *self)
                                   &req->send.state.uct_comp);
     }
 
-    if (status == UCS_INPROGRESS) {
-        ucp_request_send_state_advance(req, 0, UCP_REQUEST_SEND_PROTO_RMA,
-                                       UCS_INPROGRESS);
-    }
+    ucp_request_send_state_advance(req, NULL, UCP_REQUEST_SEND_PROTO_RMA,
+                                   status);
 
     return ucp_rma_request_advance(req, frag_length, status,
                                    UCS_PTR_MAP_KEY_INVALID);

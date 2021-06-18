@@ -687,7 +687,7 @@ static ucs_status_t ucp_ep_create_to_sock_addr(ucp_worker_h worker,
     return UCS_OK;
 
 err_cleanup_lanes:
-    ucp_ep_cleanup_lanes(ep);
+    ucp_ep_cleanup_lanes(ep, NULL);
 err_delete:
     ucp_ep_delete(ep);
 err:
@@ -960,7 +960,7 @@ ucp_ep_purge_lanes(ucp_ep_h ep, uct_pending_purge_callback_t purge_cb,
 void ucp_ep_destroy_internal(ucp_ep_h ep)
 {
     ucs_debug("ep %p: destroy", ep);
-    ucp_ep_cleanup_lanes(ep);
+    ucp_ep_cleanup_lanes(ep, NULL);
     ucp_ep_delete(ep);
 }
 
@@ -992,7 +992,7 @@ static void ucp_ep_check_lanes(ucp_ep_h ep)
 #endif
 }
 
-static void ucp_ep_set_lanes_failed(ucp_ep_h ep, uct_ep_h *uct_eps)
+void ucp_ep_set_lanes_failed(ucp_ep_h ep, uct_ep_h *uct_eps)
 {
     ucp_lane_index_t lane;
     uct_ep_h uct_ep;
@@ -1013,7 +1013,7 @@ static void ucp_ep_set_lanes_failed(ucp_ep_h ep, uct_ep_h *uct_eps)
     }
 }
 
-void ucp_ep_cleanup_lanes(ucp_ep_h ep)
+void ucp_ep_cleanup_lanes(ucp_ep_h ep, uct_ep_h *cleanup_uct_eps)
 {
     uct_ep_h uct_eps[UCP_MAX_LANES] = { NULL };
     ucp_lane_index_t lane;
@@ -1021,10 +1021,13 @@ void ucp_ep_cleanup_lanes(ucp_ep_h ep)
 
     ucs_debug("ep %p: cleanup lanes", ep);
 
-    ucp_ep_set_lanes_failed(ep, uct_eps);
+    if (cleanup_uct_eps == NULL) {
+        ucp_ep_set_lanes_failed(ep, uct_eps);
+        cleanup_uct_eps = uct_eps;
+    }
 
     for (lane = 0; lane < ucp_ep_num_lanes(ep); ++lane) {
-        uct_ep = uct_eps[lane];
+        uct_ep = cleanup_uct_eps[lane];
         if (uct_ep == NULL) {
             continue;
         }
@@ -1157,7 +1160,8 @@ ucs_status_ptr_t ucp_ep_close_nb(ucp_ep_h ep, unsigned mode)
     return ucp_ep_close_nbx(ep, &param);
 }
 
-void ucp_ep_discard_lanes(ucp_ep_h ep, ucs_status_t status)
+void ucp_ep_discard_lanes(ucp_ep_h ep, uct_ep_h *discard_uct_eps,
+                          ucs_status_t status)
 {
     uct_ep_h uct_eps[UCP_MAX_LANES] = { NULL };
     ucp_lane_index_t lane;
@@ -1167,10 +1171,14 @@ void ucp_ep_discard_lanes(ucp_ep_h ep, ucs_status_t status)
 
     /* flush CANCEL mustn't be called for EPs without error handling support */
     ucs_assert(ucp_ep_config(ep)->key.err_mode == UCP_ERR_HANDLING_MODE_PEER);
-    ucp_ep_set_lanes_failed(ep, uct_eps);
+
+    if (discard_uct_eps == NULL) {
+        ucp_ep_set_lanes_failed(ep, uct_eps);
+        discard_uct_eps = uct_eps;
+    }
 
     for (lane = 0; lane < ucp_ep_num_lanes(ep); ++lane) {
-        uct_ep = uct_eps[lane];
+        uct_ep = discard_uct_eps[lane];
         if (uct_ep == NULL) {
             continue;
         }
@@ -1209,7 +1217,7 @@ ucs_status_ptr_t ucp_ep_close_nbx(ucp_ep_h ep, const ucp_request_param_t *param)
     ucp_ep_update_flags(ep, UCP_EP_FLAG_CLOSED, 0);
 
     if (ucp_request_param_flags(param) & UCP_EP_CLOSE_FLAG_FORCE) {
-        ucp_ep_discard_lanes(ep, UCS_ERR_CANCELED);
+        ucp_ep_discard_lanes(ep, NULL, UCS_ERR_CANCELED);
         ucp_ep_disconnected(ep, 1);
     } else {
         request = ucp_ep_flush_internal(ep, 0, param, NULL,

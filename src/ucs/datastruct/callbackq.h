@@ -177,6 +177,21 @@ void ucs_callbackq_remove_safe(ucs_callbackq_t *cbq, int id);
 
 
 /**
+ * Find the callback from the queue for which the given predicate returns
+ * "true" (nonzero) value.
+ *
+ * @param  [in] cbq       Callback queue.
+ * @param  [in] pred      Predicate to check candidates for removal.
+ * @param  [in] arg       User-defined argument for the predicate.
+ *
+ * @return The number of found elements in the callback queue.
+ */
+unsigned
+ucs_callbackq_find_if(ucs_callbackq_t *cbq, ucs_callbackq_predicate_t pred,
+                      void *arg);
+
+
+/**
  * Remove all callbacks from the queue for which the given predicate returns
  * "true" (nonzero) value.
  * This is *not* safe to call while another thread might be dispatching callbacks.
@@ -188,8 +203,9 @@ void ucs_callbackq_remove_safe(ucs_callbackq_t *cbq, int id);
  * @param  [in] pred      Predicate to check candidates for removal.
  * @param  [in] arg       User-defined argument for the predicate.
  */
-void ucs_callbackq_remove_if(ucs_callbackq_t *cbq, ucs_callbackq_predicate_t pred,
-                             void *arg);
+void
+ucs_callbackq_remove_if(ucs_callbackq_t *cbq, ucs_callbackq_predicate_t pred,
+                        void *arg);
 
 
 /**

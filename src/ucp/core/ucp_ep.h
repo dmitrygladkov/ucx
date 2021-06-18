@@ -583,7 +583,9 @@ void ucp_ep_disconnected(ucp_ep_h ep, int force);
 
 void ucp_ep_destroy_internal(ucp_ep_h ep);
 
-void ucp_ep_cleanup_lanes(ucp_ep_h ep);
+void ucp_ep_set_lanes_failed(ucp_ep_h ep, uct_ep_h *uct_eps);
+
+void ucp_ep_cleanup_lanes(ucp_ep_h ep, uct_ep_h *cleanup_uct_eps);
 
 ucs_status_t ucp_ep_config_init(ucp_worker_h worker, ucp_ep_config_t *config,
                                 const ucp_ep_config_key_t *key);
@@ -647,7 +649,8 @@ void
 ucp_ep_purge_lanes(ucp_ep_h ep, uct_pending_purge_callback_t purge_cb,
                    void *purge_arg);
 
-void ucp_ep_discard_lanes(ucp_ep_h ucp_ep, ucs_status_t status);
+void ucp_ep_discard_lanes(ucp_ep_h ucp_ep, uct_ep_h *discard_uct_eps,
+                          ucs_status_t status);
 
 void ucp_ep_register_disconnect_progress(ucp_request_t *req);
 

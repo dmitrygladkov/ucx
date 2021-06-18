@@ -547,10 +547,12 @@ void ucs_callbackq_remove_safe(ucs_callbackq_t *cbq, int id)
     ucs_callbackq_leave(cbq);
 }
 
-void ucs_callbackq_remove_if(ucs_callbackq_t *cbq, ucs_callbackq_predicate_t pred,
-                             void *arg)
+static unsigned
+ucs_callbackq_get_if(ucs_callbackq_t *cbq, ucs_callbackq_predicate_t pred,
+                     void *arg, int remove)
 {
     ucs_callbackq_priv_t *priv = ucs_callbackq_priv(cbq);
+    unsigned found_cnt         = 0;
     ucs_callbackq_elem_t *elem;
     unsigned idx;
 
@@ -558,31 +560,56 @@ void ucs_callbackq_remove_if(ucs_callbackq_t *cbq, ucs_callbackq_predicate_t pre
 
     ucs_trace_func("cbq=%p", cbq);
 
-    ucs_callbackq_purge_fast(cbq);
-
-    /* remote fast-path elements  */
+    /* Check fast-path elements  */
     elem = cbq->fast_elems;
     while (elem->cb != NULL) {
         if (pred(elem, arg)) {
-            idx = ucs_callbackq_put_id_noflag(cbq, elem->id);
-            ucs_assert(idx == (elem - cbq->fast_elems));
-            ucs_callbackq_remove_fast(cbq, idx);
+            ++found_cnt;
+            if (remove) {
+                idx = ucs_callbackq_put_id_noflag(cbq, elem->id);
+                ucs_assert(idx == (elem - cbq->fast_elems));
+                ucs_callbackq_remove_fast(cbq, idx);
+            } else {
+                ++elem;
+            }
         } else {
             ++elem;
        }
     }
 
-    /* remote slow-path elements */
+    /* Check slow-path elements */
     elem = priv->slow_elems;
-    while (elem < priv->slow_elems + priv->num_slow_elems) {
+    while (elem < (priv->slow_elems + priv->num_slow_elems)) {
         if (pred(elem, arg)) {
-            idx = ucs_callbackq_put_id_noflag(cbq, elem->id);
-            ucs_assert(idx == (elem - priv->slow_elems));
-            ucs_callbackq_remove_slow(cbq, idx);
+            ++found_cnt;
+            if (remove) {
+                idx = ucs_callbackq_put_id_noflag(cbq, elem->id);
+                ucs_assert(idx == (elem - priv->slow_elems));
+                ucs_callbackq_remove_slow(cbq, idx);
+            } else {
+                ++elem;
+            }
         } else {
             ++elem;
        }
     }
 
     ucs_callbackq_leave(cbq);
+
+    return found_cnt;
+}
+
+unsigned
+ucs_callbackq_find_if(ucs_callbackq_t *cbq, ucs_callbackq_predicate_t pred,
+                      void *arg)
+{
+    return ucs_callbackq_get_if(cbq, pred, arg, 0);
+}
+
+void
+ucs_callbackq_remove_if(ucs_callbackq_t *cbq, ucs_callbackq_predicate_t pred,
+                        void *arg)
+{
+    ucs_callbackq_purge_fast(cbq);
+    ucs_callbackq_get_if(cbq, pred, arg, 1);
 }

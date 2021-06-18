@@ -457,7 +457,7 @@ static unsigned ucp_worker_iface_err_handle_progress(void *arg)
     ucs_assert(ucp_ep->flags & UCP_EP_FLAG_FAILED);
 
     /* the EP can be closed from last completion callback */
-    ucp_ep_discard_lanes(ucp_ep, status);
+    ucp_ep_discard_lanes(ucp_ep, err_handle_arg->uct_eps, status);
     ucp_ep_reqs_purge(ucp_ep, status);
     ucp_stream_ep_cleanup(ucp_ep);
 
@@ -490,6 +490,26 @@ static unsigned ucp_worker_iface_err_handle_progress(void *arg)
     return 1;
 }
 
+static int
+ucp_worker_err_handle_find_by_uct_ep_filter(const ucs_callbackq_elem_t *elem,
+                                            void *arg)
+{
+    ucp_worker_err_handle_arg_t *err_handle_arg = elem->arg;
+    uct_ep_h uct_ep                             = arg;
+    uct_ep_h *uct_ep_iter;
+
+    if (elem->cb == ucp_worker_iface_err_handle_progress) {
+        for (uct_ep_iter = err_handle_arg->uct_eps; *uct_ep_iter != NULL;
+             ++uct_ep_iter) {
+            if (*uct_ep_iter == uct_ep) {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 int ucp_worker_err_handle_remove_filter(const ucs_callbackq_elem_t *elem,
                                         void *arg)
 {
@@ -497,7 +517,7 @@ int ucp_worker_err_handle_remove_filter(const ucs_callbackq_elem_t *elem,
 
     if ((elem->cb == ucp_worker_iface_err_handle_progress) &&
         (err_handle_arg->ucp_ep == arg)) {
-        /* release err handling argument to avoid memory leak */
+        ucp_ep_cleanup_lanes(err_handle_arg->ucp_ep, err_handle_arg->uct_eps);
         ucs_free(err_handle_arg);
         return 1;
     }
@@ -512,8 +532,9 @@ ucs_status_t ucp_worker_set_ep_failed(ucp_worker_h worker, ucp_ep_h ucp_ep,
                                       uct_ep_h uct_ep, ucp_lane_index_t lane,
                                       ucs_status_t status)
 {
-    uct_worker_cb_id_t prog_id = UCS_CALLBACKQ_ID_NULL;
-    ucs_status_t ret_status    = UCS_OK;
+    uct_worker_cb_id_t prog_id      = UCS_CALLBACKQ_ID_NULL;
+    ucs_status_t ret_status         = UCS_OK;
+    uct_ep_h uct_eps[UCP_MAX_LANES] = { NULL };
     char lane_info_str[64];
     ucp_rsc_index_t rsc_index;
     uct_tl_resource_desc_t *tl_rsc;
@@ -533,9 +554,7 @@ ucs_status_t ucp_worker_set_ep_failed(ucp_worker_h worker, ucp_ep_h ucp_ep,
         goto out_ok;
     }
 
-    /* Release EP ID here to prevent protocols from sending reply */
-    ucp_ep_release_id(ucp_ep);
-    ucp_ep_update_flags(ucp_ep, UCP_EP_FLAG_FAILED, 0);
+    ucp_ep_set_lanes_failed(ucp_ep, uct_eps);
 
     if (ucp_ep_config(ucp_ep)->key.err_mode == UCP_ERR_HANDLING_MODE_NONE) {
         /* NOTE: if user has not requested error handling on the endpoint,
@@ -555,6 +574,8 @@ ucs_status_t ucp_worker_set_ep_failed(ucp_worker_h worker, ucp_ep_h ucp_ep,
     err_handle_arg->status  = status;
     err_handle_arg->timeout = ucs_get_time() +
             worker->context->config.ext.err_handler_delay;
+
+    memcpy(err_handle_arg->uct_eps, uct_eps, sizeof(uct_eps));
 
     /* invoke the rest of the error handling flow from the main thread */
     uct_worker_progress_register_safe(worker->uct,
@@ -692,6 +713,13 @@ ucp_worker_iface_error_handler(void *arg, uct_ep_h uct_ep, ucs_status_t status)
         ret_status = ucp_worker_iface_handle_uct_ep_failure(ucp_ep, lane,
                                                             uct_ep, status);
     } else {
+        if (ucs_callbackq_find_if(&worker->uct->progress_q,
+                                  ucp_worker_err_handle_find_by_uct_ep_filter,
+                                  uct_ep) > 0) {
+            ret_status = UCS_OK;
+            goto out;
+        }
+
         ucs_error("worker %p: uct_ep %p isn't associated with any ucp endpoint"
                   " and was not scheduled to be discarded",
                   worker, uct_ep);

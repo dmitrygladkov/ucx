@@ -320,6 +320,7 @@ typedef struct ucp_worker_err_handle_arg {
     ucp_ep_h         ucp_ep;
     ucs_time_t       timeout;
     ucs_status_t     status;
+    uct_ep_h         uct_eps[UCP_MAX_LANES];
 } ucp_worker_err_handle_arg_t;
 
 

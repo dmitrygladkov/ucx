@@ -621,6 +621,7 @@ void ucp_request_send_state_ff(ucp_request_t *req, ucs_status_t status)
          * equivalent to reply not being received */
         ucp_ep_req_purge(req->send.ep, req, status, 1);
     } else {
+        ucp_request_send_buffer_dereg(req);
         ucp_request_complete_send(req, status);
     }
 }

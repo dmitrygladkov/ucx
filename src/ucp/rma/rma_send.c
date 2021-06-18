@@ -86,8 +86,7 @@ ucs_status_t ucp_rma_request_advance(ucp_request_t *req, ssize_t frag_length,
             return UCS_ERR_NO_RESOURCE;
         }
 
-        ucp_request_send_buffer_dereg(req);
-        ucp_request_complete_send(req, status);
+        ucp_request_send_state_ff(req, status);
         return UCS_OK;
     }
 

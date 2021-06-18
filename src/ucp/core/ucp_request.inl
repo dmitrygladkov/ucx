@@ -415,21 +415,6 @@ ucp_request_send_state_reset(ucp_request_t *req,
     }
 }
 
-static UCS_F_ALWAYS_INLINE void
-ucp_request_send_state_advance_comp(ucp_request_t *req, ucs_status_t status)
-{
-    ucs_assert(status != UCS_ERR_NO_RESOURCE);
-
-    if (status == UCS_INPROGRESS) {
-        ++req->send.state.uct_comp.count;
-    } else if (UCS_STATUS_IS_ERR(status)) {
-        uct_completion_update_status(&req->send.state.uct_comp, status);
-        if (req->send.state.uct_comp.count == 0) {
-            req->send.state.uct_comp.func(&req->send.state.uct_comp);
-        }
-    }
-}
-
 /**
  * Advance state of send request after UCT operation. This function applies
  * @a new_dt_state to @a req request according to @a proto protocol. Also, UCT
@@ -458,7 +443,6 @@ ucp_request_send_state_advance(ucp_request_t *req,
     case UCP_REQUEST_SEND_PROTO_ZCOPY_AM:
     case UCP_REQUEST_SEND_PROTO_RNDV_GET:
     case UCP_REQUEST_SEND_PROTO_RNDV_PUT:
-    case UCP_REQUEST_SEND_PROTO_BCOPY_AM:
         ucs_assert(new_dt_state != NULL);
         if (UCP_DT_IS_CONTIG(req->send.datatype)) {
             /* cppcheck-suppress nullPointer */
@@ -467,20 +451,13 @@ ucp_request_send_state_advance(ucp_request_t *req,
             /* cppcheck-suppress nullPointer */
             req->send.state.dt        = *new_dt_state;
         }
-
-        if (UCS_STATUS_IS_ERR(status)) {
-            /* fast-forward multi-fragment protocol */
-            req->send.state.dt.offset = req->send.length;
-        }
-
-        if (proto != UCP_REQUEST_SEND_PROTO_BCOPY_AM) {
-            ucp_request_send_state_advance_comp(req, status);
-        }
-
-        break;
+        /* Fall through */
     case UCP_REQUEST_SEND_PROTO_RMA:
-        ucp_request_send_state_advance_comp(req, status);
+        if (status == UCS_INPROGRESS) {
+            ++req->send.state.uct_comp.count;
+        }
         break;
+    case UCP_REQUEST_SEND_PROTO_BCOPY_AM:
     default:
         ucs_fatal("unknown protocol");
     }
